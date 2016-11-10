@@ -3,7 +3,7 @@ python:
     - 2.7
 
 env:
-    - PLATFORMIO_CI_SRC=.
+    - PLATFORMIO_CI_SRC=src
 install:
     - pip install platformio
 
