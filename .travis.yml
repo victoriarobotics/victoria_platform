@@ -4,6 +4,7 @@ python:
 
 env:
     - PLATFORMIO_CI_SRC=src/main.cpp
+    - PLATFORMIO_CI_SRC=lib/Parser/src/Parser.cpp
 install:
     - pip install platformio
 
