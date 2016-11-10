@@ -2,6 +2,8 @@ language: python
 python:
     - 2.7
 
+env:
+    - PLATFORMIO_CI_SRC=src/main.cpp
 install:
     - pip install platformio
 
