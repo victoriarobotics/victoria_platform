@@ -31,15 +31,15 @@
 HardwareSerial trex = HardwareSerial();
 
 // Motor encoders
-Encoder encoder_l(ENCODER_LEFT_PIN_1, ENCODER_LEFT_PIN_2);
-Encoder encoder_r(ENCODER_RIGHT_PIN_1, ENCODER_RIGHT_PIN_2);
-unsigned long encoder_l_pos;
-unsigned long encoder_r_pos;
+Encoder encoder_left(ENCODER_LEFT_PIN_1, ENCODER_LEFT_PIN_2);
+Encoder encoder_right(ENCODER_RIGHT_PIN_1, ENCODER_RIGHT_PIN_2);
+unsigned long encoder_left_pos;
+unsigned long encoder_right_pos;
 
 // Bumper sensors
 #define BUMPER_THRESHOLD 500  // Threshold that will indicate robot should stop
-unsigned int bumper_l_base;
-unsigned int bumper_r_base;
+unsigned int bumper_left_base;
+unsigned int bumper_right_base;
 
 // ROS node handle
 ros::NodeHandle ros_nh;
@@ -64,14 +64,6 @@ char ros_odom_header_frame_id[] = "/odom";
 char ros_odom_child_frame_id[] = "/base_link";
   
 void setup() {
-  current_time = ros_nh.now();
-  last_time = current_time;
-  last_cmd_vel_time = current_time;
-  encoder_l_pos = 0.0;
-  encoder_r_pos = 0.0;
-  bumper_l_base = analogRead(BUMPER_LEFT_PIN);
-  bumper_r_base = analogRead(BUMPER_RIGHT_PIN);
-
   // Setup basic I2C master mode pins 18/19, external pullups, 400kHz, 200ms default timeout
   Wire.begin(I2C_MASTER, 0x00, I2C_PINS_18_19, I2C_PULLUP_EXT, 400000);
   Wire.setDefaultTimeout(200000); // 200ms
@@ -94,6 +86,14 @@ void setup() {
 
   // Initialize ros subscribers
   ros_nh.subscribe(ros_cmd_vel_sub);
+  
+  current_time = ros_nh.now();
+  last_time = current_time;
+  last_cmd_vel_time = current_time;
+  encoder_left_pos = 0.0;
+  encoder_right_pos = 0.0;
+  bumper_left_base = analogRead(BUMPER_LEFT_PIN);
+  bumper_right_base = analogRead(BUMPER_RIGHT_PIN);
 }
 
 void loop() {
@@ -104,14 +104,14 @@ void loop() {
   // something is wrong, stop the robot.
   
   // Read bumper sensors
-  unsigned int new_bumper_l = analogRead(BUMPER_LEFT_PIN);
-  unsigned int new_bumper_r = analogRead(BUMPER_RIGHT_PIN);
+  unsigned int new_bumper_left = analogRead(BUMPER_LEFT_PIN);
+  unsigned int new_bumper_right = analogRead(BUMPER_RIGHT_PIN);
 
   // Check bumper thresholds to stop robot
   
   // Read encoders
-  unsigned long new_encoder_l_pos = encoder_l.read();
-  unsigned long new_encoder_r_pos = encoder_r.read();
+  unsigned long new_encoder_left_pos = encoder_left.read();
+  unsigned long new_encoder_right_pos = encoder_right.read();
 
   // Read imu data
 
@@ -144,32 +144,32 @@ void cmdVelCallback(const geometry_msgs::Twist& twist_msg) {
  * to be between -255 and 255. Values outside this range
  * will be pinned.
  */
-void setMotors(int motor_l_speed, int motor_r_speed) {
-  byte command_byte_l = 0xC4;
-  if (motor_l_speed < 0) {
-    command_byte_l = command_byte_l | 0x01;
+void setMotors(int motor_left_speed, int motor_right_speed) {
+  byte command_byte_left = 0xC4;
+  if (motor_left_speed < 0) {
+    command_byte_left = command_byte_left | 0x01;
   } else {
-    command_byte_l = command_byte_l | 0x02;
+    command_byte_left = command_byte_left | 0x02;
   }
-  motor_l_speed = abs(motor_l_speed);
-  if (motor_l_speed > 255) {
-    motor_l_speed = 255;
+  motor_left_speed = abs(motor_left_speed);
+  if (motor_left_speed > 255) {
+    motor_left_speed = 255;
   }
 
-  byte command_byte_r = 0xCC;
-  if (motor_r_speed < 0) {
-    command_byte_r = command_byte_r | 0x01;
+  byte command_byte_right = 0xCC;
+  if (motor_right_speed < 0) {
+    command_byte_right = command_byte_right | 0x01;
   } else {
-    command_byte_r = command_byte_r | 0x02;
+    command_byte_right = command_byte_right | 0x02;
   }
-  motor_r_speed = abs(motor_r_speed);
-  if (motor_r_speed > 255) {
-    motor_r_speed = 255;
+  motor_right_speed = abs(motor_right_speed);
+  if (motor_right_speed > 255) {
+    motor_right_speed = 255;
   }
   
-  trex.write(command_byte_l);
-  trex.write((byte)motor_l_speed);
-  trex.write(command_byte_r);
-  trex.write((byte)motor_r_speed);
+  trex.write(command_byte_left);
+  trex.write((byte)motor_left_speed);
+  trex.write(command_byte_right);
+  trex.write((byte)motor_right_speed);
 }
 
