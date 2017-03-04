@@ -27,6 +27,8 @@ Encoder encoder_right(ENCODER_RIGHT_PIN_1, ENCODER_RIGHT_PIN_2);
 // IMU and Magnetometer
 LSM6 imu;
 LIS3MDL mag;
+bool imu_err = false;
+bool mag_err = false;
 
 char debug_str[80];
 
@@ -45,17 +47,18 @@ void setup() {
   Wire.setDefaultTimeout(200000); // 200ms
 
   // Setup IMU and magenetometer that use I2C
-  if (!imu.init())
-  {
-    Serial.println("Failed to detect and initialize IMU!");
-    while (1);
+  if (imu.init()) {
+    imu.enableDefault();
+    // TODO: set timeout?
+  } else {
+    imu_err = true;
   }
-  imu.enableDefault();
   
-  if (!mag.init())
-  {
-    Serial.println("Failed to detect and initialize magnetometer!");
-    while (1);
+  if (mag.init()) {
+    mag.enableDefault();
+    // TODO: set timeout?
+  } else {
+    mag_err = true;
   }
 
   mag.enableDefault();
@@ -87,25 +90,36 @@ void loop() {
   ros_encoder_pub.publish(&ros_debug_msg);
   
   // Read the IMU
-  long i2c_start_time = millis();
-  imu.read();
-  long i2c_duration = millis() - i2c_start_time;
-
-  snprintf(debug_str, sizeof(debug_str), "A: %6d %6d %6d    G: %6d %6d %6d   I2C Duration: %ld",
-    imu.a.x, imu.a.y, imu.a.z,
-    imu.g.x, imu.g.y, imu.g.z,
-    i2c_duration);
-  ros_debug_msg.data = debug_str;
+  if (imu_err) {
+    ros_debug_msg.data = "IMU failure!";
+  } else {
+    long i2c_start_time = millis();
+    imu.read();
+    long i2c_duration = millis() - i2c_start_time;
+  
+    snprintf(debug_str, sizeof(debug_str), "A: %6d %6d %6d    G: %6d %6d %6d   I2C Duration: %ld",
+      imu.a.x, imu.a.y, imu.a.z,
+      imu.g.x, imu.g.y, imu.g.z,
+      i2c_duration);
+    ros_debug_msg.data = debug_str;
+  }
   ros_imu_pub.publish(&ros_debug_msg);
 
   // Read the Magnetometer
-  i2c_start_time = millis();
-  mag.read();
-  i2c_duration = millis() - i2c_start_time;
-
-  snprintf(debug_str, sizeof(debug_str), "M: %6d %6d %6d   I2C Duration: %ld",
-    mag.m.x, mag.m.y, mag.m.z,
-    i2c_duration);
-  ros_debug_msg.data = debug_str;
+  if (mag_err) {
+    ros_debug_msg.data = "Magnetometer failure!";
+  } else {
+    long i2c_start_time = millis();
+    mag.read();
+    long i2c_duration = millis() - i2c_start_time;
+  
+    snprintf(debug_str, sizeof(debug_str), "M: %6d %6d %6d   I2C Duration: %ld",
+      mag.m.x, mag.m.y, mag.m.z,
+      i2c_duration);
+    ros_debug_msg.data = debug_str;
+  }
   ros_magnetometer_pub.publish(&ros_debug_msg);
+
+  // Send all the ROS messages
+  ros_nh.spinOnce();
 }
