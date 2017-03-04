@@ -1,3 +1,22 @@
+/*
+ * Victoria Teensy Circuit Test ROS Node
+ * 
+ * This code is a ROS node that executes all of the components
+ * on the Teensy circuit or the Victoria RoboMagellan team. It
+ * publishes the various data on ROS publishers to be used as
+ * a debugging tool. This code does not drive or control the robot,
+ * it just reports on the states of the various components as the
+ * robot is operated remotele.
+ * 
+ * It uses the rosserial library to communicate with ROS. It uses
+ * Arduino and Teensy libraries to interact with systems and
+ * circuits connected to the Teensy processor. This code assumes
+ * that a Teensy 3.5 is used.
+ * 
+ * https://github.com/victoriarobotics
+ * 
+ */
+ 
 // Teensy includes
 #define ENCODER_OPTIMIZE_INTERRUPTS
 #include <Encoder.h>
@@ -122,4 +141,6 @@ void loop() {
 
   // Send all the ROS messages
   ros_nh.spinOnce();
+
+  // TODO: control the rate that messages are published?
 }
