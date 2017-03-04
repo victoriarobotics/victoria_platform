@@ -2,16 +2,23 @@
  * Victoria Teensy ROS Node
  * 
  * This code is the ROS node that executes on the Teensy processor
- * for the Victoria RoboMagellan team. It uses the rosserial
- * library to communicate with ROS. It uses Arduino and Teensy
- * libraries to interact with systems and circuits connected to the
- * Teensy processor. This code assumes that a Teensy 3.5 is used.
+ * for the Victoria RoboMagellan team.
+ * 
+ * It uses the rosserial library to communicate with ROS. It uses
+ * Arduino and Teensy libraries to interact with systems and
+ * circuits connected to the Teensy processor. This code assumes
+ * that a Teensy 3.5 is used.
+ * 
+ * https://github.com/victoriarobotics
+ * 
  */
 
 // Teensy includes
 #define ENCODER_OPTIMIZE_INTERRUPTS
 #include <Encoder.h>  // 
 #include <i2c_t3.h>
+#include <LSM6.h>
+#include <LIS3MDL.h>
 
 // ROS includes
 #include <ros.h>
@@ -30,21 +37,28 @@
 // TRex motor controller
 HardwareSerial trex = HardwareSerial();
 
+// Bumper sensors
+#define BUMPER_THRESHOLD 500  // Threshold that will indicate robot should stop
+unsigned int bumper_left_base;
+unsigned int bumper_right_base;
+
 // Motor encoders
 Encoder encoder_left(ENCODER_LEFT_PIN_1, ENCODER_LEFT_PIN_2);
 Encoder encoder_right(ENCODER_RIGHT_PIN_1, ENCODER_RIGHT_PIN_2);
 unsigned long encoder_left_pos;
 unsigned long encoder_right_pos;
 
-// Bumper sensors
-#define BUMPER_THRESHOLD 500  // Threshold that will indicate robot should stop
-unsigned int bumper_left_base;
-unsigned int bumper_right_base;
+// IMU and Magnetometer
+LSM6 imu;
+LIS3MDL mag;
 
 // ROS node handle
 ros::NodeHandle ros_nh;
 
 // ROS cmd_vel subscriber
+// Threshold, in nanoseconds, to wait for a cmd_vel message else take action
+// to stop robot activity
+#define CMD_VEL_TIMEOUT_THRESHOLD_NS 200000000
 void cmdVelCallback(const geometry_msgs::Twist& twist_msg);
 ros::Subscriber<geometry_msgs::Twist> ros_cmd_vel_sub("cmd_vel", cmdVelCallback);
 
@@ -70,6 +84,21 @@ void setup() {
     
   // Start serial port to TRex
   trex.begin(19200);
+  
+  // Setup IMU and magenetometer that use I2C
+  if (imu.init()) {
+    imu.enableDefault();
+    // TODO: set timeout?
+  } else {
+    // TODO: How to handle error?
+  }
+  
+  if (mag.init()) {
+    mag.enableDefault();
+    // TODO: set timeout?
+  } else {
+    // TODO: How to handle error?
+  }
 
   // Initialize ros node
   ros_nh.initNode();
@@ -102,6 +131,10 @@ void loop() {
 
   // If we have not received any cmd_vel messages for a while,
   // something is wrong, stop the robot.
+  if (current_time.toNsec() - last_cmd_vel_time.toNsec() 
+        > CMD_VEL_TIMEOUT_THRESHOLD_NS) {
+    // TODO: Do something to stop the robot!
+  }
   
   // Read bumper sensors
   unsigned int new_bumper_left = analogRead(BUMPER_LEFT_PIN);
