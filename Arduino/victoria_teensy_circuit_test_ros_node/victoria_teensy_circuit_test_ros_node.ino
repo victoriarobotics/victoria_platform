@@ -49,6 +49,11 @@ LIS3MDL mag;
 bool imu_err = false;
 bool mag_err = false;
 
+#define BLINK_DURATION 2000
+#define BLINK_PIN 13 // Teensy digital pin 13 for LED
+int blink_state;
+unsigned long next_blink_time;
+
 char debug_str[80];
 
 std_msgs::String ros_debug_msg;
@@ -79,11 +84,13 @@ void setup() {
   } else {
     mag_err = true;
   }
-
-  mag.enableDefault();
     
   // Start serial port to TRex
   trex.begin(19200);
+
+  next_blink_time = millis();
+  blink_state = LOW;
+  pinMode(BLINK_PIN, OUTPUT);
 
   // Initialize ros node
   ros_nh.initNode();
@@ -142,5 +149,16 @@ void loop() {
   // Send all the ROS messages
   ros_nh.spinOnce();
 
+  // Indicate to outside world that something is going on
+  if (millis() > next_blink_time) {
+    if (blink_state == LOW) {
+      blink_state = HIGH;
+    } else {
+      blink_state = LOW;
+    }
+    digitalWrite(BLINK_PIN, blink_state);
+    next_blink_time = millis() + BLINK_DURATION;
+  }
+  
   // TODO: control the rate that messages are published?
 }
