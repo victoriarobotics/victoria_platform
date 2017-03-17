@@ -50,7 +50,7 @@ double motor_left_speed;
 double motor_right_speed;
 
 // Victoria constants
-#define TICKS_PER_RADIAN 11 // TODO(mwomack): Need the real value here
+#define TICKS_PER_RADIAN 9072 // TODO(mwomack): Verify real value
 #define TRACK_RADIUS 0.235  // in meters
 #define WHEEL_RADIUS 0.127  // in meters
 #define MAX_SPEED 4.71      // in meters/second
@@ -68,8 +68,8 @@ unsigned long encoder_right_pos;
 ros::Time last_encoder_read_time;
 
 #define NUM_VEL_SAMPLES 10
-double ang_vel_samples_l[NUM_VEL_SAMPLES];
-double ang_vel_samples_r[NUM_VEL_SAMPLES];
+double ang_v_samples_l[NUM_VEL_SAMPLES];
+double ang_v_samples_r[NUM_VEL_SAMPLES];
 int velocity_index = 0;
 
 // IMU and Magnetometer
@@ -99,6 +99,7 @@ ros::Time last_odom_publish_time;
 geometry_msgs::TransformStamped ros_odom_transform;
 tf::TransformBroadcaster ros_odom_broadcaster;
 
+// Position variables
 double x;
 double y;
 double th;
@@ -194,6 +195,16 @@ void setup() {
     publish_odom_freq_hz = 100;
   }
   
+  int publish_imu_freq_hz;
+  if (!ros_nh.getParam("publish_imu_freq_hz", &publish_imu_freq_hz)) { 
+    publish_odom_freq_hz = 2;
+  }
+  
+  int publish_magnetometer_freq_hz;
+  if (!ros_nh.getParam("publish_magnetometer_freq_hz", &publish_magnetometer_freq_hz)) { 
+    publish_odom_freq_hz = 2;
+  }
+  
   // Initialize broadcasters
   ros_odom_transform.header.frame_id = ros_odom_header_frame_id;
   ros_odom_transform.child_frame_id = ros_odom_child_frame_id;
@@ -210,6 +221,8 @@ void setup() {
   // Setup Timer callbacks
   timer.every((1.0/read_encoders_freq_hz) * 1000, doReadEncoders);
   timer.every((1.0/publish_odom_freq_hz) * 1000, doPublishOdom);
+  timer.every((1.0/publish_imu_freq_hz) * 1000, doPublishImu);
+  timer.every((1.0/publish_magnetometer_freq_hz) * 1000, doPublishMagnetometer);
   timer.every(BLINK_DURATION, doBlink);
   
   current_time = ros_nh.now();
@@ -285,11 +298,11 @@ void cmdVelCallback(const geometry_msgs::Twist& cmd_vel_msg) {
     return;
   }
   
-  // Calculate linear wheel velocity
+  // Calculate wheel linear velocity
   double vl = cmd_vel_msg.linear.x - (cmd_vel_msg.angular.z * TRACK_RADIUS);
   double vr = cmd_vel_msg.linear.x + (cmd_vel_msg.angular.z * TRACK_RADIUS);
 
-  // Calculate angular velocity
+  // Calculate wheel angular velocity
   double wl = vl / WHEEL_RADIUS;
   double wr = vr / WHEEL_RADIUS;
 
@@ -313,8 +326,8 @@ void doReadEncoders() {
   unsigned long diff_r = new_encoder_right_pos - encoder_right_pos;
   double diff_t = current_time.toSec() - last_encoder_read_time.toSec();
 
-  ang_vel_samples_l[velocity_index] = (diff_l/TICKS_PER_RADIAN)/diff_t;
-  ang_vel_samples_r[velocity_index] = (diff_r/TICKS_PER_RADIAN)/diff_t;
+  ang_v_samples_l[velocity_index] = (diff_l/TICKS_PER_RADIAN)/diff_t;
+  ang_v_samples_r[velocity_index] = (diff_r/TICKS_PER_RADIAN)/diff_t;
 
   velocity_index = (velocity_index + 1) % NUM_VEL_SAMPLES;
   encoder_left_pos = new_encoder_left_pos;
@@ -322,20 +335,31 @@ void doReadEncoders() {
   last_encoder_read_time = current_time;
 }
 
+/*
+ * Publish odometry to ros.
+ */
 void doPublishOdom() {
   ros::Time current_time = ros_nh.now();
-  double wl = getAngularVelocityFromSamples(ang_vel_samples_l);
-  double wr = getAngularVelocityFromSamples(ang_vel_samples_r);
+  
+  // Get the current wheel angular velocity
+  double wl = getAngularVelocityFromSamples(ang_v_samples_l);
+  double wr = getAngularVelocityFromSamples(ang_v_samples_r);
+  
+  // Convert to wheel linear velocity
   double vl = wl * WHEEL_RADIUS;
   double vr = wr * WHEEL_RADIUS;
+  
+  // Calculate robot vx and vth
   double vx = (vl + vr)/2;
   double vth = (vr - vl)/(2 * TRACK_RADIUS);
   
+  // Calculate the deltas since
   double dt = current_time.toSec() - last_odom_publish_time.toSec();
   double delta_x = (vx * cos(th)) * dt;
   double delta_y = (vx * sin(th)) * dt;
   double delta_th = vth * dt;
 
+  // Update position
   x += delta_x;
   y += delta_y;
   th += delta_th;
@@ -368,19 +392,23 @@ void doPublishOdom() {
   ros_odom_msg.twist.twist.angular.z = vth;
   
   ros_odom_pub.publish(&ros_odom_msg);
+  
+  // Remember current time for next publish
+  last_odom_publish_time = current_time;
 }
 
 /*
- * Returns the calculated angular velocity from all of
- * the samples. Right now it just returns the average
- * of all the samples.
+ * Publish imu data to ros.
  */
-double getAngularVelocityFromSamples(double* samples) {
-  double total = 0;
-  for (int count = 0; count < NUM_VEL_SAMPLES; count++) {
-    total += samples[count];
-  }
-  return total/10.0;
+void doPublishImu() {
+  // TODO(mwomack)
+}
+
+/*
+ * Publish magnetometer data to ros.
+ */
+void doPublishMagnetometer() {
+  // TODO(mwomack)
 }
 
 /*
@@ -409,6 +437,19 @@ void setMotors(double motor_left_speed, double motor_right_speed) {
   trex.write((byte)trex_left_speed);
   trex.write(command_byte_right);
   trex.write((byte)trex_right_speed);
+}
+
+/*
+ * Returns the calculated angular velocity from all of
+ * the samples. currently it just returns the average
+ * of all the samples.
+ */
+double getAngularVelocityFromSamples(double* samples) {
+  double total = 0;
+  for (int count = 0; count < NUM_VEL_SAMPLES; count++) {
+    total += samples[count];
+  }
+  return total/10.0;
 }
 
 // Callback for blink
