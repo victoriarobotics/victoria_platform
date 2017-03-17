@@ -104,9 +104,6 @@ double x;
 double y;
 double th;
 
-ros::Time current_time;
-ros::Time previous_time;
-
 char ros_odom_header_frame_id[] = "/odom";
 char ros_odom_child_frame_id[] = "/base_link";
 
@@ -225,8 +222,7 @@ void setup() {
   timer.every((1.0/publish_magnetometer_freq_hz) * 1000, doPublishMagnetometer);
   timer.every(BLINK_DURATION, doBlink);
   
-  current_time = ros_nh.now();
-  previous_time = current_time;
+  ros::Time current_time = ros_nh.now();
   last_cmd_vel_time = current_time;
   last_odom_publish_time = current_time;
   last_encoder_read_time = current_time;
@@ -263,8 +259,7 @@ void loop() {
     motor_right_speed = 0;
   }
 
-  // Set current time for all following code
-  current_time = ros_nh.now();
+  ros::Time current_time = ros_nh.now();
 
   // Update any timer callbacks
   timer.update();
@@ -272,8 +267,7 @@ void loop() {
   // Update ROS
   ros_nh.spinOnce();
   
-  // If have not received cmd_vel messages in threshold time,
-  // something is wrong, stop the robot.
+  // If no cmd_vel messages withing threshold time, something is wrong, stop the robot.
   cmd_vel_timeout_stop = (current_time.toSec() - last_cmd_vel_time.toSec()) > CMD_VEL_TIMEOUT_THRESHOLD;
   if (cmd_vel_timeout_stop) {
     motor_left_speed = 0;
@@ -282,9 +276,6 @@ void loop() {
 
   // Set the motors to the current speed
   setMotors(motor_left_speed, motor_right_speed);
-
-  // Current time is now the previous time
-  previous_time = current_time;
 }
 
 /*
