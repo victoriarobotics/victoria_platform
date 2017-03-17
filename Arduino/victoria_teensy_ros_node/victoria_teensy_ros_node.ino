@@ -197,12 +197,12 @@ void setup() {
   
   int publish_imu_freq_hz;
   if (!ros_nh.getParam("publish_imu_freq_hz", &publish_imu_freq_hz)) { 
-    publish_odom_freq_hz = 2;
+    publish_imu_freq_hz = 2;
   }
   
   int publish_magnetometer_freq_hz;
   if (!ros_nh.getParam("publish_magnetometer_freq_hz", &publish_magnetometer_freq_hz)) { 
-    publish_odom_freq_hz = 2;
+    publish_magnetometer_freq_hz = 2;
   }
   
   // Initialize broadcasters
@@ -516,4 +516,3 @@ void doMagnetometerDebug() {
   ros_magnetometer_debug_pub.publish(&ros_debug_msg);
 }
 #endif
-
