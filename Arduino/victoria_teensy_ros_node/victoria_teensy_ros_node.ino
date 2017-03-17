@@ -25,9 +25,10 @@
 
 // ROS includes
 #include <ros.h>
+#include <geometry_msgs/Quaternion.h>
 #include <geometry_msgs/Twist.h>
-#include <geometry_msgs/Pose.h>
 #include <nav_msgs/Odometry.h>
+#include <tf/tf.h>
 #include <tf/transform_broadcaster.h>
 #include <std_msgs/String.h>
 
@@ -55,7 +56,6 @@ double motor_right_speed;
 #define MAX_SPEED 4.71      // in meters/second
 
 // Bumper sensors
-#define BUMPER_THRESHOLD 300  // Threshold that will indicate robot should stop
 bool bumper_stop = false; // Set to true if bumpers indicate robot should stop
 unsigned int bumper_left;
 unsigned int bumper_right;
@@ -67,8 +67,9 @@ unsigned long encoder_left_pos;
 unsigned long encoder_right_pos;
 ros::Time last_encoder_read_time;
 
-double ang_vel_l[10];
-double ang_vel_r[10];
+#define NUM_VEL_SAMPLES 10
+double ang_vel_samples_l[NUM_VEL_SAMPLES];
+double ang_vel_samples_r[NUM_VEL_SAMPLES];
 int velocity_index = 0;
 
 // IMU and Magnetometer
@@ -97,6 +98,10 @@ ros::Time last_odom_publish_time;
 // ROS Odometry broadcaster
 geometry_msgs::TransformStamped ros_odom_transform;
 tf::TransformBroadcaster ros_odom_broadcaster;
+
+double x;
+double y;
+double th;
 
 ros::Time current_time;
 ros::Time previous_time;
@@ -168,6 +173,9 @@ void setup() {
   encoder_right_pos = 0.0;
   motor_left_speed = 0.0;
   motor_right_speed = 0.0;
+  x = 0.0;
+  y = 0.0;
+  th = 0.0;
 
   // Initialize and connect to ros
   ros_nh.initNode();
@@ -234,7 +242,6 @@ void setup() {
 
 void loop() {
   // Check bumper thresholds to stop robot
-  // TODO(mwomack): Figure out how to support ROS instructing going backwards
   bumper_left = analogRead(BUMPER_LEFT_PIN);
   bumper_right = analogRead(BUMPER_RIGHT_PIN);
   bumper_stop = bumper_left < 450 || bumper_right < 450;
@@ -291,6 +298,11 @@ void cmdVelCallback(const geometry_msgs::Twist& cmd_vel_msg) {
   motor_right_speed = max(-1, min(1, wr / MAX_SPEED));
 }
 
+/*
+ * Reads the current values of the motor encoders and uses
+ * the difference with the previous value from the encoders
+ * to calculate the angular velocity of each wheel.
+ */
 void doReadEncoders() {
   ros::Time current_time = ros_nh.now();
   unsigned long new_encoder_left_pos = encoder_left.read();
@@ -301,10 +313,10 @@ void doReadEncoders() {
   unsigned long diff_r = new_encoder_right_pos - encoder_right_pos;
   double diff_t = current_time.toSec() - last_encoder_read_time.toSec();
 
-  ang_vel_l[velocity_index] = (diff_l/TICKS_PER_RADIAN)/diff_t;
-  ang_vel_r[velocity_index] = (diff_r/TICKS_PER_RADIAN)/diff_t;
+  ang_vel_samples_l[velocity_index] = (diff_l/TICKS_PER_RADIAN)/diff_t;
+  ang_vel_samples_r[velocity_index] = (diff_r/TICKS_PER_RADIAN)/diff_t;
 
-  velocity_index = (velocity_index + 1) % 10;
+  velocity_index = (velocity_index + 1) % NUM_VEL_SAMPLES;
   encoder_left_pos = new_encoder_left_pos;
   encoder_right_pos = new_encoder_right_pos;
   last_encoder_read_time = current_time;
@@ -312,21 +324,63 @@ void doReadEncoders() {
 
 void doPublishOdom() {
   ros::Time current_time = ros_nh.now();
-  double dt = current_time.toSec() - last_odom_publish_time.toSec();
+  double wl = getAngularVelocityFromSamples(ang_vel_samples_l);
+  double wr = getAngularVelocityFromSamples(ang_vel_samples_r);
+  double vl = wl * WHEEL_RADIUS;
+  double vr = wr * WHEEL_RADIUS;
+  double vx = (vl + vr)/2;
+  double vth = (vr - vl)/(2 * TRACK_RADIUS);
   
+  double dt = current_time.toSec() - last_odom_publish_time.toSec();
+  double delta_x = (vx * cos(th)) * dt;
+  double delta_y = (vx * sin(th)) * dt;
+  double delta_th = vth * dt;
+
+  x += delta_x;
+  y += delta_y;
+  th += delta_th;
+    
   // Broadcast odometry transform
+
+  // Since all odometry is 6DOF we'll need a quaternion created from yaw
+  geometry_msgs::Quaternion odom_quat = tf::createQuaternionFromYaw(th);
+  
+  // First, we'll publish the transform over tf
   ros_odom_transform.header.stamp = current_time;
-
-  // TODO: set all the transform data
-
+  ros_odom_transform.transform.translation.x = x;
+  ros_odom_transform.transform.translation.y = y;
+  ros_odom_transform.transform.translation.z = 0.0;
+  ros_odom_transform.transform.rotation = odom_quat;
   ros_odom_broadcaster.sendTransform(ros_odom_transform);
   
-  // Publish Odometry
+  // Next, we'll publish the odometry message over ROS
   ros_odom_msg.header.stamp = current_time;
-  
-  // TODO: Set all the odometry data
+
+  //set the position
+  ros_odom_msg.pose.pose.position.x = x;
+  ros_odom_msg.pose.pose.position.y = y;
+  ros_odom_msg.pose.pose.position.z = 0.0;
+  ros_odom_msg.pose.pose.orientation = odom_quat;
+
+  //set the velocity
+  ros_odom_msg.twist.twist.linear.x = vx;
+  ros_odom_msg.twist.twist.linear.y = 0.0;
+  ros_odom_msg.twist.twist.angular.z = vth;
   
   ros_odom_pub.publish(&ros_odom_msg);
+}
+
+/*
+ * Returns the calculated angular velocity from all of
+ * the samples. Right now it just returns the average
+ * of all the samples.
+ */
+double getAngularVelocityFromSamples(double* samples) {
+  double total = 0;
+  for (int count = 0; count < NUM_VEL_SAMPLES; count++) {
+    total += samples[count];
+  }
+  return total/10.0;
 }
 
 /*
