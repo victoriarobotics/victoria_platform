@@ -143,7 +143,7 @@ ros::Publisher ros_teensy_debug_pub("teensy_debug_info", &ros_debug_msg);
 
 // Debug blink
 // Blink duration is in milliseconds.
-#define BLINK_DURATION 2000
+#define BLINK_DURATION 500
 int blink_state = LOW;
   
 void setup() {
@@ -180,9 +180,11 @@ void setup() {
   y = 0.0;
   th = 0.0;
 
+  unsigned long rosStartTimeout = millis() + 500;
+
   // Initialize and connect to ros
   ros_nh.initNode();
-  while(!ros_nh.connected()) {
+  while(!ros_nh.connected() && millis() < rosStartTimeout) {
     ros_nh.spinOnce();
   }
 
@@ -226,7 +228,7 @@ void setup() {
   timer.every((1.0/publish_imu_freq_hz) * 1000, doPublishImu);
   timer.every((1.0/publish_magnetometer_freq_hz) * 1000, doPublishMagnetometer);
   timer.every(BLINK_DURATION, doBlink);
-  
+
   ros::Time current_time = ros_nh.now();
   last_cmd_vel_time = current_time;
   last_odom_publish_time = current_time;
