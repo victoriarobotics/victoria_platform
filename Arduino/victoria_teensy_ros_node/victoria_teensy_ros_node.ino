@@ -14,6 +14,10 @@
  */
 
 // Teensy includes
+/**
+ * Macro to tell the Teensy Encoder library to use interrupts for best
+ * performance.
+ */
 #define ENCODER_OPTIMIZE_INTERRUPTS
 #include <Encoder.h>
 #include <i2c_t3.h>
@@ -82,7 +86,7 @@ bool mag_err = false;
 ros::NodeHandle ros_nh;
 
 // ROS cmd_vel subscriber
-// Threshold, in nanoseconds, to wait for a cmd_vel message else take action
+// Threshold, in seconds, to wait for a cmd_vel message else take action
 // to stop robot activity
 #define CMD_VEL_TIMEOUT_THRESHOLD 0.2 // 200 milliseconds
 ros::Time last_cmd_vel_time;
@@ -138,6 +142,7 @@ ros::Publisher ros_teensy_debug_pub("teensy_debug_info", &ros_debug_msg);
 #endif
 
 // Debug blink
+// Blink duration is in milliseconds.
 #define BLINK_DURATION 2000
 int blink_state = LOW;
   
@@ -440,7 +445,7 @@ double getAngularVelocityFromSamples(double* samples) {
   for (int count = 0; count < NUM_VEL_SAMPLES; count++) {
     total += samples[count];
   }
-  return total/10.0;
+  return total / NUM_VEL_SAMPLES;
 }
 
 // Callback for blink
