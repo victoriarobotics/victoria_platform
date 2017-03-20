@@ -49,7 +49,7 @@ install:
     ### Get platformio libs.
     # Install Timer.h library for easy ISRs.
     # http://platformio.org/lib/show/75/Timer
-    # Pull in custom IMU libraries that use the i2c_t3.h instead of Time.h
+    # Pull in custom IMU libraries that use the i2c_t3.h instead of Timer.h
     - platformio lib -g install 75 https://github.com/victoriarobotics/lsm6-arduino.git https://github.com/victoriarobotics/lis3mdl-arduino.git
 
 before_script:
