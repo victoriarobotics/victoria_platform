@@ -37,13 +37,13 @@
 #include <std_msgs/String.h>
 
 // Teensy pin definitions
-#define BLINK_PIN           13  // Teensy digital pin 13
-#define ENCODER_LEFT_PIN_1  29  // Teensy digital pin 29
-#define ENCODER_LEFT_PIN_2  30  // Teensy digital pin 30
-#define ENCODER_RIGHT_PIN_1 31  // Teensy digital pin 31
-#define ENCODER_RIGHT_PIN_2 32  // Teensy digital pin 32
-#define BUMPER_LEFT_PIN     A15 // Teensy analog pin 15
-#define BUMPER_RIGHT_PIN    A14 // Teensy analog pin 14
+const int BLINK_PIN(13);           // Teensy digital pin 13
+const int ENCODER_LEFT_PIN_1(29);  // Teensy digital pin 29
+const int ENCODER_LEFT_PIN_2(30);  // Teensy digital pin 30
+const int ENCODER_RIGHT_PIN_1(31); // Teensy digital pin 31
+const int ENCODER_RIGHT_PIN_2(32); // Teensy digital pin 32
+const int BUMPER_LEFT_PIN(A15);    // Teensy analog pin 15
+const int BUMPER_RIGHT_PIN(A14);   // Teensy analog pin 14
 
 // Timer
 Timer timer;
@@ -54,10 +54,10 @@ double motor_left_speed;
 double motor_right_speed;
 
 // Victoria constants
-#define TICKS_PER_RADIAN 9072 // TODO(mwomack): Verify real value
-#define TRACK_RADIUS 0.235  // in meters
-#define WHEEL_RADIUS 0.127  // in meters
-#define MAX_SPEED 4.71      // in meters/second
+const unsigned long TICKS_PER_RADIAN(9072); // TODO(mwomack): Verify real value
+const double TRACK_RADIUS(0.235);  // in meters
+const double WHEEL_RADIUS(0.127);  // in meters
+const double MAX_SPEED(4.71);      // in meters/second
 
 // Bumper sensors
 bool bumper_stop = false; // Set to true if bumpers indicate robot should stop
@@ -71,7 +71,7 @@ unsigned long encoder_left_pos;
 unsigned long encoder_right_pos;
 ros::Time last_encoder_read_time;
 
-#define NUM_VEL_SAMPLES 10
+const int NUM_VEL_SAMPLES(10);
 double ang_v_samples_l[NUM_VEL_SAMPLES];
 double ang_v_samples_r[NUM_VEL_SAMPLES];
 int velocity_index = 0;
@@ -88,7 +88,7 @@ ros::NodeHandle ros_nh;
 // ROS cmd_vel subscriber
 // Threshold, in seconds, to wait for a cmd_vel message else take action
 // to stop robot activity
-#define CMD_VEL_TIMEOUT_THRESHOLD 0.2 // 200 milliseconds
+const double CMD_VEL_TIMEOUT_THRESHOLD(0.2); // 200 milliseconds
 ros::Time last_cmd_vel_time;
 bool cmd_vel_timeout_stop = false; // Set to true if time out threshold has been exceeded
 void cmdVelCallback(const geometry_msgs::Twist& twist_msg);
@@ -111,39 +111,17 @@ double th;
 char ros_odom_header_frame_id[] = "/odom";
 char ros_odom_child_frame_id[] = "/base_link";
 
-// ROS Debug publishers
-#define ENABLE_BUMPER_DEBUG  // Uncomment to publish bumper debug info
-#define ENABLE_ENCODER_DEBUG  // Uncomment to publish encoder debug info
-#define ENABLE_IMU_DEBUG  // Uncomment to publish imu debug info
-#define ENABLE_MAGNETOMETER_DEBUG  // Uncomment to publish magnetometer debug info
-#define ENABLE_TEENSY_DEBUG  // Uncomment to publish teensy debug info
-
 char debug_str[80];
 std_msgs::String ros_debug_msg;
 
-#ifdef ENABLE_BUMPER_DEBUG
 ros::Publisher ros_bumper_debug_pub("bumper_debug", &ros_debug_msg);
-#endif
-
-#ifdef ENABLE_ENCODER_DEBUG
 ros::Publisher ros_encoder_debug_pub("encoder_debug", &ros_debug_msg);
-#endif
-
-#ifdef ENABLE_IMU_DEBUG
 ros::Publisher ros_imu_debug_pub("imu_debug", &ros_debug_msg);
-#endif
-
-#ifdef ENABLE_MAGNETOMETER_DEBUG
 ros::Publisher ros_magnetometer_debug_pub("magnetometer_debug", &ros_debug_msg);
-#endif
-
-#ifdef ENABLE_TEENSY_DEBUG
-ros::Publisher ros_teensy_debug_pub("teensy_debug_info", &ros_debug_msg);
-#endif
 
 // Debug blink
 // Blink duration is in milliseconds.
-#define BLINK_DURATION 500
+const int BLINK_DURATION(500);
 int blink_state = LOW;
   
 void setup() {
@@ -208,6 +186,26 @@ void setup() {
   if (!ros_nh.getParam("publish_magnetometer_freq_hz", &publish_magnetometer_freq_hz)) { 
     publish_magnetometer_freq_hz = 2;
   }
+
+  int publish_bumper_debug_info_freq_hz;
+  if (!ros_nh.getParam("publish_bumper_debug_info_freq_hz", &publish_bumper_debug_info_freq_hz)) { 
+    publish_bumper_debug_info_freq_hz = 10;
+  }
+
+  int publish_encoder_debug_info_freq_hz;
+  if (!ros_nh.getParam("publish_encoder_debug_info_freq_hz", &publish_encoder_debug_info_freq_hz)) { 
+    publish_encoder_debug_info_freq_hz = 10;
+  }
+
+  int publish_imu_debug_info_freq_hz;
+  if (!ros_nh.getParam("publish_imu_debug_info_freq_hz", &publish_imu_debug_info_freq_hz)) { 
+    publish_imu_debug_info_freq_hz = 2;
+  }
+
+  int publish_magnetometer_debug_info_freq_hz;
+  if (!ros_nh.getParam("publish_magnetometer_debug_info_freq_hz", &publish_magnetometer_debug_info_freq_hz)) { 
+    publish_magnetometer_debug_info_freq_hz = 2;
+  }
   
   // Initialize broadcasters
   ros_odom_transform.header.frame_id = ros_odom_header_frame_id;
@@ -223,10 +221,10 @@ void setup() {
   ros_nh.subscribe(ros_cmd_vel_sub);
 
   // Setup Timer callbacks
-  timer.every((1.0/read_encoders_freq_hz) * 1000, doReadEncoders);
-  timer.every((1.0/publish_odom_freq_hz) * 1000, doPublishOdom);
-  timer.every((1.0/publish_imu_freq_hz) * 1000, doPublishImu);
-  timer.every((1.0/publish_magnetometer_freq_hz) * 1000, doPublishMagnetometer);
+  timer.every(convertFreqToMillis(read_encoders_freq_hz), doReadEncoders);
+  timer.every(convertFreqToMillis(publish_odom_freq_hz), doPublishOdom);
+  timer.every(convertFreqToMillis(publish_imu_freq_hz), doPublishImu);
+  timer.every(convertFreqToMillis(publish_magnetometer_freq_hz), doPublishMagnetometer);
   timer.every(BLINK_DURATION, doBlink);
 
   ros::Time current_time = ros_nh.now();
@@ -235,25 +233,14 @@ void setup() {
   last_encoder_read_time = current_time;
 
   // Initialize ros debug publishers
-#ifdef ENABLE_BUMPER_DEBUG
   ros_nh.advertise(ros_bumper_debug_pub);
-  timer.every(500, doBumperDebug);
-#endif
-#ifdef ENABLE_ENCODER_DEBUG
   ros_nh.advertise(ros_encoder_debug_pub);
-  timer.every(500, doEncoderDebug);
-#endif
-#ifdef ENABLE_IMU_DEBUG
   ros_nh.advertise(ros_imu_debug_pub);
-  timer.every(500, doImuDebug);
-#endif
-#ifdef ENABLE_MAGNETOMETER_DEBUG
   ros_nh.advertise(ros_magnetometer_debug_pub);
-  timer.every(500, doMagnetometerDebug);
-#endif
-#ifdef ENABLE_TEENSY_DEBUG
-  ros_nh.advertise(ros_teensy_debug_pub);
-#endif
+  timer.every(convertFreqToMillis(publish_bumper_debug_info_freq_hz), doBumperDebug);
+  timer.every(convertFreqToMillis(publish_encoder_debug_info_freq_hz), doEncoderDebug);
+  timer.every(convertFreqToMillis(publish_imu_debug_info_freq_hz), doImuDebug);
+  timer.every(convertFreqToMillis(publish_magnetometer_debug_info_freq_hz), doMagnetometerDebug);
 }
 
 void loop() {
@@ -460,7 +447,6 @@ void doBlink() {
   digitalWrite(BLINK_PIN, blink_state);
 }
 
-#ifdef ENABLE_BUMPER_DEBUG
 void doBumperDebug() {
   // Read the bumper sensors
   snprintf(debug_str, sizeof(debug_str), 
@@ -468,9 +454,7 @@ void doBumperDebug() {
   ros_debug_msg.data = debug_str;
   ros_bumper_debug_pub.publish(&ros_debug_msg);
 }
-#endif
 
-#ifdef ENABLE_ENCODER_DEBUG
 void doEncoderDebug() {
   // Read the encoders
   snprintf(debug_str, sizeof(debug_str), "L: %ld    R: %ld",
@@ -478,9 +462,7 @@ void doEncoderDebug() {
   ros_debug_msg.data = debug_str;
   ros_encoder_debug_pub.publish(&ros_debug_msg);
 }
-#endif
 
-#ifdef ENABLE_IMU_DEBUG
 void doImuDebug() {
   // Read the IMU
   if (imu_err) {
@@ -496,9 +478,7 @@ void doImuDebug() {
   }
   ros_imu_debug_pub.publish(&ros_debug_msg);
 }
-#endif
 
-#ifdef ENABLE_MAGNETOMETER_DEBUG
 void doMagnetometerDebug() {
   // Read the Magnetometer
   if (mag_err) {
@@ -513,4 +493,14 @@ void doMagnetometerDebug() {
   }
   ros_magnetometer_debug_pub.publish(&ros_debug_msg);
 }
-#endif
+
+/*
+ * Converts a frequency in hertz to the
+ * number of milliseconds to match the
+ * frequency. For example, 2 hz = 500 millis
+ * or 100 hz = 10 millis.
+ */
+int convertFreqToMillis(int frequency) {
+  return static_cast<int>((1.0/frequency) * 1000);
+}
+
