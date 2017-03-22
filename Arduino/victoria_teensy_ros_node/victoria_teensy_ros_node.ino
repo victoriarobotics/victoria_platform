@@ -29,12 +29,10 @@
 
 // ROS includes
 #include <ros.h>
-#include <geometry_msgs/Quaternion.h>
+#include <geometry_msgs/Pose2D.h>
 #include <geometry_msgs/Twist.h>
-#include <nav_msgs/Odometry.h>
-#include <tf/tf.h>
-#include <tf/transform_broadcaster.h>
 #include <std_msgs/String.h>
+#include <victoria_nav_msgs/Odom2DRaw.h>
 
 // Teensy pin definitions
 const int BLINK_PIN(13);           // Teensy digital pin 13
@@ -95,18 +93,12 @@ void cmdVelCallback(const geometry_msgs::Twist& twist_msg);
 ros::Subscriber<geometry_msgs::Twist> ros_cmd_vel_sub("cmd_vel", cmdVelCallback);
 
 // ROS Odometry publisher
-nav_msgs::Odometry ros_odom_msg;
-ros::Publisher ros_odom_pub("odom", &ros_odom_msg);
+victoria_nav_msgs::Odom2DRaw ros_odom_msg;
+ros::Publisher ros_odom_pub("odom_2d_raw", &ros_odom_msg);
 ros::Time last_odom_publish_time;
 
-// ROS Odometry broadcaster
-geometry_msgs::TransformStamped ros_odom_transform;
-tf::TransformBroadcaster ros_odom_broadcaster;
-
-// Position variables
-double x;
-double y;
-double th;
+// Position of robot
+geometry_msgs::Pose2D pose;
 
 char ros_odom_header_frame_id[] = "/odom";
 char ros_odom_child_frame_id[] = "/base_link";
@@ -154,9 +146,9 @@ void setup() {
   encoder_right_pos = 0.0;
   motor_left_speed = 0.0;
   motor_right_speed = 0.0;
-  x = 0.0;
-  y = 0.0;
-  th = 0.0;
+  pose.x = 0.0;
+  pose.y = 0.0;
+  pose.theta = 0.0;
 
   unsigned long rosStartTimeout = millis() + 500;
 
@@ -206,11 +198,6 @@ void setup() {
   if (!ros_nh.getParam("publish_magnetometer_debug_info_freq_hz", &publish_magnetometer_debug_info_freq_hz)) { 
     publish_magnetometer_debug_info_freq_hz = 2;
   }
-  
-  // Initialize broadcasters
-  ros_odom_transform.header.frame_id = ros_odom_header_frame_id;
-  ros_odom_transform.child_frame_id = ros_odom_child_frame_id;
-  ros_odom_broadcaster.init(ros_nh);
 
   // Initialize ros publishers
   ros_odom_msg.header.frame_id = ros_odom_header_frame_id;
@@ -340,41 +327,25 @@ void doPublishOdom() {
   
   // Calculate the deltas since
   double dt = current_time.toSec() - last_odom_publish_time.toSec();
-  double delta_x = (vx * cos(th)) * dt;
-  double delta_y = (vx * sin(th)) * dt;
+  double delta_x = (vx * cos(pose.theta)) * dt;
+  double delta_y = (vx * sin(pose.theta)) * dt;
   double delta_th = vth * dt;
 
   // Update position
-  x += delta_x;
-  y += delta_y;
-  th += delta_th;
-    
-  // Broadcast odometry transform
-
-  // Since all odometry is 6DOF we'll need a quaternion created from yaw
-  geometry_msgs::Quaternion odom_quat = tf::createQuaternionFromYaw(th);
+  pose.x += delta_x;
+  pose.y += delta_y;
+  pose.theta += delta_th;
   
-  // First, we'll publish the transform over tf
-  ros_odom_transform.header.stamp = current_time;
-  ros_odom_transform.transform.translation.x = x;
-  ros_odom_transform.transform.translation.y = y;
-  ros_odom_transform.transform.translation.z = 0.0;
-  ros_odom_transform.transform.rotation = odom_quat;
-  ros_odom_broadcaster.sendTransform(ros_odom_transform);
-  
-  // Next, we'll publish the odometry message over ROS
+  // Publish the odometry message over ROS
   ros_odom_msg.header.stamp = current_time;
 
-  //set the position
-  ros_odom_msg.pose.pose.position.x = x;
-  ros_odom_msg.pose.pose.position.y = y;
-  ros_odom_msg.pose.pose.position.z = 0.0;
-  ros_odom_msg.pose.pose.orientation = odom_quat;
+  // set the position
+  ros_odom_msg.pose = pose;
 
-  //set the velocity
-  ros_odom_msg.twist.twist.linear.x = vx;
-  ros_odom_msg.twist.twist.linear.y = 0.0;
-  ros_odom_msg.twist.twist.angular.z = vth;
+  // set the velocity
+  ros_odom_msg.twist.vx = vx;
+  ros_odom_msg.twist.vy = 0.0;
+  ros_odom_msg.twist.vtheta = vth;
   
   ros_odom_pub.publish(&ros_odom_msg);
   
