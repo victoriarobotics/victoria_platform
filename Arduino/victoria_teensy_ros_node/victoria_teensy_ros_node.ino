@@ -334,7 +334,7 @@ void doPublishOdom() {
   // Update position
   pose.x += delta_x;
   pose.y += delta_y;
-  pose.theta += delta_th;
+  pose.theta = normalize_angle(pose.theta + delta_th);
   
   // Publish the odometry message over ROS
   ros_odom_msg.header.stamp = current_time;
@@ -473,5 +473,21 @@ void doMagnetometerDebug() {
  */
 int convertFreqToMillis(int frequency) {
   return static_cast<int>((1.0/frequency) * 1000);
+}
+
+/**
+ * These normalize methods are copied from ros angles:
+ * http://docs.ros.org/api/angles/html/angles_8h_source.html
+ */
+static inline double normalize_angle_positive(double angle) {
+  return fmod(fmod(angle, 2.0*M_PI) + 2.0*M_PI, 2.0*M_PI);
+}
+
+static inline double normalize_angle(double angle) {
+  double a = normalize_angle_positive(angle);
+  if (a > M_PI) {
+    a -= 2.0 *M_PI;
+  }
+  return a;
 }
 
