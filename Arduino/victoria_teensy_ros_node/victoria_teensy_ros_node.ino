@@ -479,11 +479,11 @@ int convertFreqToMillis(int frequency) {
  * These normalize methods are copied from ros angles:
  * http://docs.ros.org/api/angles/html/angles_8h_source.html
  */
-static inline double normalize_angle_positive(double angle) {
+double normalize_angle_positive(double angle) {
   return fmod(fmod(angle, 2.0*M_PI) + 2.0*M_PI, 2.0*M_PI);
 }
 
-static inline double normalize_angle(double angle) {
+double normalize_angle(double angle) {
   double a = normalize_angle_positive(angle);
   if (a > M_PI) {
     a -= 2.0 *M_PI;
