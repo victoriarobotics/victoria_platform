@@ -347,6 +347,7 @@ void doPublishRawImu() {
 
   // Publish the imu message over ROS
   ros_raw_imu_msg.header.stamp = current_time;
+  // TODO(mwomack): set header frame to what?
 
   ros_raw_imu_msg.accelerometer.x = convertLSM6ToMetersPerSecondSquared(imu.a.x);
   ros_raw_imu_msg.accelerometer.y = convertLSM6ToMetersPerSecondSquared(imu.a.y);
