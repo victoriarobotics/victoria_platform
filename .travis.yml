@@ -61,14 +61,16 @@ before_script:
     # Pull in custom rosserial because PR https://github.com/ros-drivers/rosserial/pull/270
     # hasn't made it to the debs yet. When it does, this should be removed.
     - git clone https://github.com/ros-drivers/rosserial.git --branch $ROS_DISTRO-devel
+    # Include custom victoria_msgs
+    - git clone https://github.com/victoriarobotics/victoria_msgs.git
     - cd ~/catkin_ws
     - catkin_make
     - source ~/catkin_ws/devel/setup.bash
     # Make sketchbook/libraries folder.
     - mkdir -p $CI_SRC_PATH/sketchbook/libraries
     - export CI_LIB_PATH=$CI_SRC_PATH/sketchbook/libraries
-    # Make rosserial_arduino in the sketchbook/libraries folder.
-    - rosrun rosserial_arduino make_libraries.py $CI_LIB_PATH
+    # Make rosserial_arduino in the sketchbook/libraries folder, including victoria_nav_msgs
+    - rosrun rosserial_arduino make_libraries.py $CI_LIB_PATH victoria_nav_msgs
     
 script:
     # Build code
