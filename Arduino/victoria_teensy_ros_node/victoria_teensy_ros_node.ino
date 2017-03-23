@@ -100,7 +100,6 @@ ros::Publisher ros_raw_odom_pub("odom_2d_raw", &ros_raw_odom_msg);
 // Raw IMU publisher
 victoria_sensor_msgs::IMURaw ros_raw_imu_msg;
 ros::Publisher ros_raw_imu_pub("imu_raw", &ros_raw_imu_msg);
-ros::Time last_raw_odom_publish_time;
 
 // Position of robot
 geometry_msgs::Pose2D pose;
@@ -204,7 +203,6 @@ void setup() {
 
   ros::Time current_time = ros_nh.now();
   last_cmd_vel_time = current_time;
-  last_raw_odom_publish_time = current_time;
   last_encoder_read_time = current_time;
 
   // Initialize ros debug publishers
@@ -296,6 +294,7 @@ void doReadEncoders() {
  */
 void doPublishRawOdom() {
   ros::Time current_time = ros_nh.now();
+  static ros::Time last_raw_odom_publish_time(current_time);
   
   // Get the current wheel angular velocity
   double wl = getAngularVelocityFromSamples(ang_v_samples_l);
