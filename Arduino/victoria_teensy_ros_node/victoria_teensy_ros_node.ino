@@ -337,25 +337,6 @@ void doPublishRawOdom() {
   last_raw_odom_publish_time = current_time;
 }
 
-/*
- * Publish imu data to ros.
- */
-void doPublishRawImu() {
-  ros::Time current_time = ros_nh.now();
-  imu.read();
-  mag.read();
-
-  // Publish the imu message over ROS
-  ros_raw_imu_msg.header.stamp = current_time;
-  // TODO(mwomack): set header frame to what?
-
-  ros_raw_imu_msg.accelerometer = convertAccelerometer(imu);
-  ros_raw_imu_msg.gyro = convertGyro(imu);
-  ros_raw_imu_msg.magnetometer = convertMagnetometer(mag);
-
-  ros_raw_imu_pub.publish(&ros_raw_imu_msg);
-}
-
 /**
  * Converts accelerometer readings from LSM6 default settings
  * in m/s^2.
@@ -407,6 +388,25 @@ geometry_msgs::Vector3 convertMagnetometer(const LIS3MDL& mag) {
   converted.y = mag.m.y / conversionFactor;
   converted.z = mag.m.z / conversionFactor;
   return converted;
+}
+
+/*
+ * Publish imu data to ros.
+ */
+void doPublishRawImu() {
+  ros::Time current_time = ros_nh.now();
+  imu.read();
+  mag.read();
+
+  // Publish the imu message over ROS
+  ros_raw_imu_msg.header.stamp = current_time;
+  // TODO(mwomack): set header frame to what?
+
+  ros_raw_imu_msg.accelerometer = convertAccelerometer(imu);
+  ros_raw_imu_msg.gyro = convertGyro(imu);
+  ros_raw_imu_msg.magnetometer = convertMagnetometer(mag);
+
+  ros_raw_imu_pub.publish(&ros_raw_imu_msg);
 }
 
 /*
