@@ -71,7 +71,7 @@ before_script:
     - export CI_LIB_PATH=$CI_SRC_PATH/sketchbook/libraries
     # Make rosserial_arduino in the sketchbook/libraries folder,
     # including victoria_nav_msgs and victoria_sensor_msgs
-    - rosrun rosserial_arduino make_libraries.py $CI_LIB_PATH victoria_nav_msgs,victoria_sensor_msgs
+    - rosrun rosserial_arduino make_libraries.py $CI_LIB_PATH victoria_nav_msgs victoria_sensor_msgs
     
 script:
     # Build code
