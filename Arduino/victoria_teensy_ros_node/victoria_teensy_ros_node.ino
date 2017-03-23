@@ -96,11 +96,11 @@ ros::Subscriber<geometry_msgs::Twist> ros_cmd_vel_sub("cmd_vel", cmdVelCallback)
 // Raw 2D Odometry publisher
 victoria_nav_msgs::Odom2DRaw ros_raw_odom_msg;
 ros::Publisher ros_raw_odom_pub("odom_2d_raw", &ros_raw_odom_msg);
-ros::Time last_raw_odom_publish_time;
 
 // Raw IMU publisher
 victoria_sensor_msgs::IMURaw ros_raw_imu_msg;
 ros::Publisher ros_raw_imu_pub("imu_raw", &ros_raw_imu_msg);
+ros::Time last_raw_odom_publish_time;
 
 // Position of robot
 geometry_msgs::Pose2D pose;
@@ -124,7 +124,7 @@ void setup() {
   Wire.begin(I2C_MASTER, 0x00, I2C_PINS_18_19, I2C_PULLUP_EXT, 400000);
   Wire.setDefaultTimeout(200000); // 200ms
 
-  // Setup IMU and magenetometer that use I2C
+  // Setup IMU and magnetometer that use I2C
   if (imu.init()) {
     imu.enableDefault();
     // TODO(mwomack): set timeout?
@@ -349,54 +349,64 @@ void doPublishRawImu() {
   ros_raw_imu_msg.header.stamp = current_time;
   // TODO(mwomack): set header frame to what?
 
-  ros_raw_imu_msg.accelerometer.x = convertLSM6ToMetersPerSecondSquared(imu.a.x);
-  ros_raw_imu_msg.accelerometer.y = convertLSM6ToMetersPerSecondSquared(imu.a.y);
-  ros_raw_imu_msg.accelerometer.z = convertLSM6ToMetersPerSecondSquared(imu.a.z);
-  
-  ros_raw_imu_msg.gyro.x = convertLSM6ToRadiansPerSecond(imu.g.x);
-  ros_raw_imu_msg.gyro.y = convertLSM6ToRadiansPerSecond(imu.g.y);
-  ros_raw_imu_msg.gyro.z = convertLSM6ToRadiansPerSecond(imu.g.z);
-  
-  ros_raw_imu_msg.magnetometer.x = convertLIS3MDLToTesla(mag.m.x);
-  ros_raw_imu_msg.magnetometer.y = convertLIS3MDLToTesla(mag.m.y);
-  ros_raw_imu_msg.magnetometer.z = convertLIS3MDLToTesla(mag.m.z);
+  ros_raw_imu_msg.accelerometer = convertAccelerometer(imu);
+  ros_raw_imu_msg.gyro = convertGyro(imu);
+  ros_raw_imu_msg.magnetometer = convertMagnetometer(mag);
 
   ros_raw_imu_pub.publish(&ros_raw_imu_msg);
 }
 
 /**
- * Converts accelerometer readings from LSM6 set to default settings
+ * Converts accelerometer readings from LSM6 default settings
  * in m/s^2.
  */
-double convertLSM6ToMetersPerSecondSquared(int16_t reading) {
+geometry_msgs::Vector3 convertAccelerometer(const LSM6& imu) {
   // LSM6DS33 data sheet has accelerometer default
   // full scale setting with a conversion factor of
   // 0.061/LSB mg. Convert to g (* .001), 
   // and 1 g = 9.81 m/s^2.
-  return ((reading * 0.061) * 0.001) * 9.81;
+  static const double conversionFactor(0.061 * 0.001 * 9.81);
+
+  geometry_msgs::Vector3 converted;
+  converted.x = imu.a.x * conversionFactor;
+  converted.y = imu.a.y * conversionFactor;
+  converted.z = imu.a.z * conversionFactor;
+  return converted;
 }
 
 /**
- * Converts gyro readings from LSM6 set to default settings
+ * Converts gyro readings from LSM6 default settings
  * in rad/sec.
  */
-double convertLSM6ToRadiansPerSecond(int16_t reading) {
-  // LSM6DS33 data sheet has gyro default
+geometry_msgs::Vector3 convertGyro(const LSM6& imu) {
+  // LSM6DS33 data sheet has accelerometer default
   // full scale setting with a conversion factor of
-  // 4.375/LSB mdps. Convert to dps (* .001), and 
-  // 1 dps = 0.01745329251994 rad/sec
-  return ((reading * 4.375) * 0.001) * 0.01745329251994;
+  // 0.061/LSB mg. Convert to g (* .001), 
+  // and 1 g = 9.81 m/s^2.
+  static const double conversionFactor(4.375 * 0.001 * 0.01745329251994);
+
+  geometry_msgs::Vector3 converted;
+  converted.x = imu.g.x * conversionFactor;
+  converted.y = imu.g.y * conversionFactor;
+  converted.z = imu.g.z * conversionFactor;
+  return converted;
 }
 
 /**
- * Converts magnetometer readings from LIS3MDL set to
+ * Converts magnetometer readings from LIS3MDL
  * default settings to tesla.
  */
-double convertLIS3MDLToTesla(int16_t reading) {
+geometry_msgs::Vector3 convertMagnetometer(const LIS3MDL& mag) {
   // LIS3MDL data sheet, default full scale setting has
   // a conversion factor of LSB/6842 to get gauss value.
   // And 1 Tesla = 0.0001 gauss.
-  return (reading/6842.0)/0.0001;
+  static const double conversionFactor(6842 / 0.0001);
+
+  geometry_msgs::Vector3 converted;
+  converted.x = mag.m.x / conversionFactor;
+  converted.y = mag.m.y / conversionFactor;
+  converted.z = mag.m.z / conversionFactor;
+  return converted;
 }
 
 /*
