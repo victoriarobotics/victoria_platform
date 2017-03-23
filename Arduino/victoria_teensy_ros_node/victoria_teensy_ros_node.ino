@@ -33,6 +33,7 @@
 #include <geometry_msgs/Twist.h>
 #include <std_msgs/String.h>
 #include <victoria_nav_msgs/Odom2DRaw.h>
+#include <victoria_sensor_msgs/IMURaw.h>
 
 // Teensy pin definitions
 const int BLINK_PIN(13);           // Teensy digital pin 13
@@ -92,10 +93,13 @@ bool cmd_vel_timeout_stop = false; // Set to true if time out threshold has been
 void cmdVelCallback(const geometry_msgs::Twist& twist_msg);
 ros::Subscriber<geometry_msgs::Twist> ros_cmd_vel_sub("cmd_vel", cmdVelCallback);
 
-// ROS Odometry publisher
-victoria_nav_msgs::Odom2DRaw ros_odom_msg;
-ros::Publisher ros_odom_pub("odom_2d_raw", &ros_odom_msg);
-ros::Time last_odom_publish_time;
+// Raw 2D Odometry publisher
+victoria_nav_msgs::Odom2DRaw ros_raw_odom_msg;
+ros::Publisher ros_raw_odom_pub("odom_2d_raw", &ros_raw_odom_msg);
+
+// Raw IMU publisher
+victoria_sensor_msgs::IMURaw ros_raw_imu_msg;
+ros::Publisher ros_raw_imu_pub("imu_raw", &ros_raw_imu_msg);
 
 // Position of robot
 geometry_msgs::Pose2D pose;
@@ -108,8 +112,6 @@ std_msgs::String ros_debug_msg;
 
 ros::Publisher ros_bumper_debug_pub("bumper_debug", &ros_debug_msg);
 ros::Publisher ros_encoder_debug_pub("encoder_debug", &ros_debug_msg);
-ros::Publisher ros_imu_debug_pub("imu_debug", &ros_debug_msg);
-ros::Publisher ros_magnetometer_debug_pub("magnetometer_debug", &ros_debug_msg);
 
 // Debug blink
 // Blink duration is in milliseconds.
@@ -121,7 +123,7 @@ void setup() {
   Wire.begin(I2C_MASTER, 0x00, I2C_PINS_18_19, I2C_PULLUP_EXT, 400000);
   Wire.setDefaultTimeout(200000); // 200ms
 
-  // Setup IMU and magenetometer that use I2C
+  // Setup IMU and magnetometer that use I2C
   if (imu.init()) {
     imu.enableDefault();
     // TODO(mwomack): set timeout?
@@ -164,19 +166,14 @@ void setup() {
     read_encoders_freq_hz = 300;
   }
   
-  int publish_odom_freq_hz;
-  if (!ros_nh.getParam("publish_odom_freq_hz", &publish_odom_freq_hz)) { 
-    publish_odom_freq_hz = 100;
+  int publish_raw_odom_freq_hz;
+  if (!ros_nh.getParam("publish_raw_odom_freq_hz", &publish_raw_odom_freq_hz)) { 
+    publish_raw_odom_freq_hz = 100;
   }
   
-  int publish_imu_freq_hz;
-  if (!ros_nh.getParam("publish_imu_freq_hz", &publish_imu_freq_hz)) { 
-    publish_imu_freq_hz = 2;
-  }
-  
-  int publish_magnetometer_freq_hz;
-  if (!ros_nh.getParam("publish_magnetometer_freq_hz", &publish_magnetometer_freq_hz)) { 
-    publish_magnetometer_freq_hz = 2;
+  int publish_raw_imu_freq_hz;
+  if (!ros_nh.getParam("publish_imu_freq_hz", &publish_raw_imu_freq_hz)) { 
+    publish_raw_imu_freq_hz = 2;
   }
 
   int publish_bumper_debug_info_freq_hz;
@@ -189,45 +186,30 @@ void setup() {
     publish_encoder_debug_info_freq_hz = 10;
   }
 
-  int publish_imu_debug_info_freq_hz;
-  if (!ros_nh.getParam("publish_imu_debug_info_freq_hz", &publish_imu_debug_info_freq_hz)) { 
-    publish_imu_debug_info_freq_hz = 2;
-  }
-
-  int publish_magnetometer_debug_info_freq_hz;
-  if (!ros_nh.getParam("publish_magnetometer_debug_info_freq_hz", &publish_magnetometer_debug_info_freq_hz)) { 
-    publish_magnetometer_debug_info_freq_hz = 2;
-  }
-
   // Initialize ros publishers
-  ros_odom_msg.header.frame_id = ros_odom_header_frame_id;
-  ros_odom_msg.child_frame_id = ros_odom_child_frame_id;
-  ros_nh.advertise(ros_odom_pub);
+  ros_raw_odom_msg.header.frame_id = ros_odom_header_frame_id;
+  ros_raw_odom_msg.child_frame_id = ros_odom_child_frame_id;
+  ros_nh.advertise(ros_raw_odom_pub);
+  ros_nh.advertise(ros_raw_imu_pub);
 
   // Initialize ros subscribers
   ros_nh.subscribe(ros_cmd_vel_sub);
 
   // Setup Timer callbacks
   timer.every(convertFreqToMillis(read_encoders_freq_hz), doReadEncoders);
-  timer.every(convertFreqToMillis(publish_odom_freq_hz), doPublishOdom);
-  timer.every(convertFreqToMillis(publish_imu_freq_hz), doPublishImu);
-  timer.every(convertFreqToMillis(publish_magnetometer_freq_hz), doPublishMagnetometer);
+  timer.every(convertFreqToMillis(publish_raw_odom_freq_hz), doPublishRawOdom);
+  timer.every(convertFreqToMillis(publish_raw_imu_freq_hz), doPublishRawImu);
   timer.every(BLINK_DURATION, doBlink);
 
   ros::Time current_time = ros_nh.now();
   last_cmd_vel_time = current_time;
-  last_odom_publish_time = current_time;
   last_encoder_read_time = current_time;
 
   // Initialize ros debug publishers
   ros_nh.advertise(ros_bumper_debug_pub);
   ros_nh.advertise(ros_encoder_debug_pub);
-  ros_nh.advertise(ros_imu_debug_pub);
-  ros_nh.advertise(ros_magnetometer_debug_pub);
   timer.every(convertFreqToMillis(publish_bumper_debug_info_freq_hz), doBumperDebug);
   timer.every(convertFreqToMillis(publish_encoder_debug_info_freq_hz), doEncoderDebug);
-  timer.every(convertFreqToMillis(publish_imu_debug_info_freq_hz), doImuDebug);
-  timer.every(convertFreqToMillis(publish_magnetometer_debug_info_freq_hz), doMagnetometerDebug);
 }
 
 void loop() {
@@ -308,10 +290,11 @@ void doReadEncoders() {
 }
 
 /*
- * Publish odometry to ros.
+ * Publish raw odometry to ros.
  */
-void doPublishOdom() {
+void doPublishRawOdom() {
   ros::Time current_time = ros_nh.now();
+  static ros::Time last_raw_odom_publish_time(current_time);
   
   // Get the current wheel angular velocity
   double wl = getAngularVelocityFromSamples(ang_v_samples_l);
@@ -326,7 +309,7 @@ void doPublishOdom() {
   double vth = (vr - vl)/(2 * TRACK_RADIUS);
   
   // Calculate the deltas since
-  double dt = current_time.toSec() - last_odom_publish_time.toSec();
+  double dt = current_time.toSec() - last_raw_odom_publish_time.toSec();
   double delta_x = (vx * cos(pose.theta)) * dt;
   double delta_y = (vx * sin(pose.theta)) * dt;
   double delta_th = vth * dt;
@@ -337,34 +320,92 @@ void doPublishOdom() {
   pose.theta = normalize_angle(pose.theta + delta_th);
   
   // Publish the odometry message over ROS
-  ros_odom_msg.header.stamp = current_time;
+  ros_raw_odom_msg.header.stamp = current_time;
 
   // set the position
-  ros_odom_msg.pose = pose;
+  ros_raw_odom_msg.pose = pose;
 
   // set the velocity
-  ros_odom_msg.twist.vx = vx;
-  ros_odom_msg.twist.vy = 0.0;
-  ros_odom_msg.twist.vtheta = vth;
+  ros_raw_odom_msg.twist.vx = vx;
+  ros_raw_odom_msg.twist.vy = 0.0;
+  ros_raw_odom_msg.twist.vtheta = vth;
   
-  ros_odom_pub.publish(&ros_odom_msg);
+  ros_raw_odom_pub.publish(&ros_raw_odom_msg);
   
   // Remember current time for next publish
-  last_odom_publish_time = current_time;
+  last_raw_odom_publish_time = current_time;
+}
+
+/**
+ * Converts accelerometer readings from LSM6 default settings
+ * in m/s^2.
+ */
+geometry_msgs::Vector3 convertAccelerometer(const LSM6& imu) {
+  // LSM6DS33 data sheet has accelerometer default
+  // full scale setting with a conversion factor of
+  // 0.061/LSB mg. Convert to g (* .001), 
+  // and 1 g = 9.81 m/s^2.
+  static const double conversionFactor(0.061 * 0.001 * 9.81);
+
+  geometry_msgs::Vector3 converted;
+  converted.x = imu.a.x * conversionFactor;
+  converted.y = imu.a.y * conversionFactor;
+  converted.z = imu.a.z * conversionFactor;
+  return converted;
+}
+
+/**
+ * Converts gyro readings from LSM6 default settings
+ * in rad/sec.
+ */
+geometry_msgs::Vector3 convertGyro(const LSM6& imu) {
+  // LSM6DS33 data sheet has accelerometer default
+  // full scale setting with a conversion factor of
+  // 0.061/LSB mg. Convert to g (* .001), 
+  // and 1 g = 9.81 m/s^2.
+  static const double conversionFactor(4.375 * 0.001 * 0.01745329251994);
+
+  geometry_msgs::Vector3 converted;
+  converted.x = imu.g.x * conversionFactor;
+  converted.y = imu.g.y * conversionFactor;
+  converted.z = imu.g.z * conversionFactor;
+  return converted;
+}
+
+/**
+ * Converts magnetometer readings from LIS3MDL
+ * default settings to tesla.
+ */
+geometry_msgs::Vector3 convertMagnetometer(const LIS3MDL& mag) {
+  // LIS3MDL data sheet, default full scale setting has
+  // a conversion factor of LSB/6842 to get gauss value.
+  // And 1 Tesla = 0.0001 gauss.
+  static const double conversionFactor(6842 / 0.0001);
+
+  geometry_msgs::Vector3 converted;
+  converted.x = mag.m.x / conversionFactor;
+  converted.y = mag.m.y / conversionFactor;
+  converted.z = mag.m.z / conversionFactor;
+  return converted;
 }
 
 /*
  * Publish imu data to ros.
  */
-void doPublishImu() {
-  // TODO(mwomack)
-}
+void doPublishRawImu() {
+  ros::Time current_time = ros_nh.now();
+  imu.read();
+  mag.read();
 
-/*
- * Publish magnetometer data to ros.
- */
-void doPublishMagnetometer() {
-  // TODO(mwomack)
+  // Publish the imu message over ROS
+  ros_raw_imu_msg.header.stamp = current_time;
+  // TODO(mwomack): set header frame to what?
+
+  ros_raw_imu_msg.accelerometer = convertAccelerometer(imu);
+  ros_raw_imu_msg.gyro = convertGyro(imu);
+  ros_raw_imu_msg.magnetometer = convertMagnetometer(mag);
+
+  ros_raw_imu_pub.publish(&ros_raw_imu_msg);
 }
 
 /*
@@ -432,37 +473,6 @@ void doEncoderDebug() {
     encoder_left.read(), encoder_right.read());
   ros_debug_msg.data = debug_str;
   ros_encoder_debug_pub.publish(&ros_debug_msg);
-}
-
-void doImuDebug() {
-  // Read the IMU
-  if (imu_err) {
-    ros_debug_msg.data = "IMU failure!";
-  } else {
-    imu.read();
-  
-    snprintf(debug_str, sizeof(debug_str), 
-      "A: %6d %6d %6d    G: %6d %6d %6d",
-      imu.a.x, imu.a.y, imu.a.z,
-      imu.g.x, imu.g.y, imu.g.z);
-    ros_debug_msg.data = debug_str;
-  }
-  ros_imu_debug_pub.publish(&ros_debug_msg);
-}
-
-void doMagnetometerDebug() {
-  // Read the Magnetometer
-  if (mag_err) {
-    ros_debug_msg.data = "Magnetometer failure!";
-  } else {
-    mag.read();
-  
-    snprintf(debug_str, sizeof(debug_str),
-      "M: %6d %6d %6d",
-      mag.m.x, mag.m.y, mag.m.z);
-    ros_debug_msg.data = debug_str;
-  }
-  ros_magnetometer_debug_pub.publish(&ros_debug_msg);
 }
 
 /*
