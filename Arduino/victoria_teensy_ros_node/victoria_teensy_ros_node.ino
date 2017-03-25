@@ -26,6 +26,7 @@
 
 // Other includes
 #include <Timer.h>
+#include "RosParamHelper.h"
 
 // ROS includes
 #include <ros.h>
@@ -84,10 +85,13 @@ bool mag_err = false;
 // ROS node handle
 ros::NodeHandle ros_nh;
 
+// Parameter helper
+RosParamHelper ros_param_helper(ros_nh);
+
 // ROS cmd_vel subscriber
 // Threshold, in seconds, to wait for a cmd_vel message else take action
 // to stop robot activity
-const double CMD_VEL_TIMEOUT_THRESHOLD(0.2); // 200 milliseconds
+double CMD_VEL_TIMEOUT_THRESHOLD;
 ros::Time last_cmd_vel_time;
 bool cmd_vel_timeout_stop = false; // Set to true if time out threshold has been exceeded
 void cmdVelCallback(const geometry_msgs::Twist& twist_msg);
@@ -161,30 +165,23 @@ void setup() {
   }
 
   // Get ros parameters
-  int read_encoders_freq_hz;
-  if (!ros_nh.getParam("read_encoders_freq_hz", &read_encoders_freq_hz)) { 
-    read_encoders_freq_hz = 300;
-  }
+  int read_encoders_freq_hz = 
+    ros_param_helper.getParam("read_encoders_freq_hz", 300);
   
-  int publish_raw_odom_freq_hz;
-  if (!ros_nh.getParam("publish_raw_odom_freq_hz", &publish_raw_odom_freq_hz)) { 
-    publish_raw_odom_freq_hz = 100;
-  }
+  int publish_raw_odom_freq_hz = 
+    ros_param_helper.getParam("publish_raw_odom_freq_hz", 100);
   
-  int publish_raw_imu_freq_hz;
-  if (!ros_nh.getParam("publish_imu_freq_hz", &publish_raw_imu_freq_hz)) { 
-    publish_raw_imu_freq_hz = 2;
-  }
+  int publish_raw_imu_freq_hz = 
+    ros_param_helper.getParam("publish_raw_imu_freq_hz", 2);
 
-  int publish_bumper_debug_info_freq_hz;
-  if (!ros_nh.getParam("publish_bumper_debug_info_freq_hz", &publish_bumper_debug_info_freq_hz)) { 
-    publish_bumper_debug_info_freq_hz = 10;
-  }
+  int publish_bumper_debug_info_freq_hz = 
+    ros_param_helper.getParam("publish_bumper_debug_info_freq_hz", 10);
 
-  int publish_encoder_debug_info_freq_hz;
-  if (!ros_nh.getParam("publish_encoder_debug_info_freq_hz", &publish_encoder_debug_info_freq_hz)) { 
-    publish_encoder_debug_info_freq_hz = 10;
-  }
+  int publish_encoder_debug_info_freq_hz =
+    ros_param_helper.getParam("publish_encoder_debug_info_freq_hz", 10);
+
+  CMD_VEL_TIMEOUT_THRESHOLD =
+    ros_param_helper.getParam("cmd_vel_timeout_threshold", 0.2);
 
   // Initialize ros publishers
   ros_raw_odom_msg.header.frame_id = ros_odom_header_frame_id;
