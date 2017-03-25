@@ -58,11 +58,6 @@ const double TRACK_RADIUS(0.235);  // in meters
 const double WHEEL_RADIUS(0.127);  // in meters
 const double MAX_SPEED(4.71);      // in meters/second
 
-// Bumper sensors
-bool bumper_stop = false; // Set to true if bumpers indicate robot should stop
-unsigned int bumper_left;
-unsigned int bumper_right;
-
 // Motor encoders
 Encoder encoder_left(ENCODER_LEFT_PIN_1, ENCODER_LEFT_PIN_2);
 Encoder encoder_right(ENCODER_RIGHT_PIN_1, ENCODER_RIGHT_PIN_2);
@@ -213,14 +208,6 @@ void setup() {
 }
 
 void loop() {
-  // Check bumper thresholds to stop robot
-  bumper_left = analogRead(BUMPER_LEFT_PIN);
-  bumper_right = analogRead(BUMPER_RIGHT_PIN);
-  bumper_stop = bumper_left < 450 || bumper_right < 450;
-  if (bumper_stop) {
-    motor_left_speed = 0;
-    motor_right_speed = 0;
-  }
 
   ros::Time current_time = ros_nh.now();
 
@@ -246,11 +233,6 @@ void loop() {
  */
 void cmdVelCallback(const geometry_msgs::Twist& cmd_vel_msg) {
   last_cmd_vel_time = ros_nh.now();
-
-  if (bumper_stop) {
-    // TODO(mwomack): Allow for reverse when bumper_stop
-    return;
-  }
   
   // Calculate wheel linear velocity
   double vl = cmd_vel_msg.linear.x - (cmd_vel_msg.angular.z * TRACK_RADIUS);
@@ -462,7 +444,9 @@ void doBlink() {
 void doBumperDebug() {
   // Read the bumper sensors
   snprintf(debug_str, sizeof(debug_str), 
-    "L: %d    R: %d    STOP: %d", bumper_left, bumper_right, bumper_stop);
+    "L: %d    R: %d", 
+    analogRead(BUMPER_LEFT_PIN),
+    analogRead(BUMPER_RIGHT_PIN));
   ros_debug_msg.data = debug_str;
   ros_bumper_debug_pub.publish(&ros_debug_msg);
 }
@@ -470,7 +454,8 @@ void doBumperDebug() {
 void doEncoderDebug() {
   // Read the encoders
   snprintf(debug_str, sizeof(debug_str), "L: %ld    R: %ld",
-    encoder_left.read(), encoder_right.read());
+    encoder_left.read(), 
+    encoder_right.read());
   ros_debug_msg.data = debug_str;
   ros_encoder_debug_pub.publish(&ros_debug_msg);
 }
