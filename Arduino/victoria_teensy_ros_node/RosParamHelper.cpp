@@ -12,7 +12,7 @@ bool RosParamHelper::getParam(const char* name, int* param, int defaultValue) {
   if (nh_.getParam(name, param)) {
     return true;
   }
-  param[0] = defaultValue;
+  (*param) = defaultValue;
   return false;
 }
 
@@ -30,12 +30,12 @@ bool RosParamHelper::getParam(const char* name, float* param, float defaultValue
   if (nh_.getParam(name, param)) {
     return true;
   }
-  param[0] = defaultValue;
+  (*param) = defaultValue;
   return false;
 }
 
 float RosParamHelper::getParam(const char* name, float defaultValue) {
-  int paramValue;
+  float paramValue;
   getParam(name, &paramValue, defaultValue);
   return paramValue;
 }
@@ -48,7 +48,7 @@ bool RosParamHelper::getParam(const char* name, char** param, char* defaultValue
   if (nh_.getParam(name, param)) {
     return true;
   }
-  strcpy(param[0], defaultValue);
+  strcpy((*param), defaultValue);
   return false;
 }
 
