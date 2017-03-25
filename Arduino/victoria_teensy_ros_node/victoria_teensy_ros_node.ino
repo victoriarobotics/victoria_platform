@@ -91,7 +91,7 @@ RosParamHelper ros_param_helper(ros_nh);
 // ROS cmd_vel subscriber
 // Threshold, in seconds, to wait for a cmd_vel message else take action
 // to stop robot activity
-double CMD_VEL_TIMEOUT_THRESHOLD;
+double cmd_vel_timeout_threshold;
 ros::Time last_cmd_vel_time;
 bool cmd_vel_timeout_stop = false; // Set to true if time out threshold has been exceeded
 void cmdVelCallback(const geometry_msgs::Twist& twist_msg);
@@ -180,7 +180,7 @@ void setup() {
   int publish_encoder_debug_info_freq_hz =
     ros_param_helper.getParam("publish_encoder_debug_info_freq_hz", 10);
 
-  CMD_VEL_TIMEOUT_THRESHOLD =
+  cmd_vel_timeout_threshold =
     ros_param_helper.getParam("cmd_vel_timeout_threshold", 0.2);
 
   // Initialize ros publishers
@@ -228,7 +228,7 @@ void loop() {
   ros_nh.spinOnce();
   
   // If no cmd_vel messages withing threshold time, something is wrong, stop the robot.
-  cmd_vel_timeout_stop = (current_time.toSec() - last_cmd_vel_time.toSec()) > CMD_VEL_TIMEOUT_THRESHOLD;
+  cmd_vel_timeout_stop = (current_time.toSec() - last_cmd_vel_time.toSec()) > cmd_vel_timeout_threshold;
   if (cmd_vel_timeout_stop) {
     motor_left_speed = 0;
     motor_right_speed = 0;
