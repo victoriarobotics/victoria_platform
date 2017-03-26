@@ -75,9 +75,12 @@ long encoder_right_pos;
 ros::Time last_encoder_read_time;
 
 const int NUM_VEL_SAMPLES(10);
-double ang_v_samples_l[NUM_VEL_SAMPLES];
-double ang_v_samples_r[NUM_VEL_SAMPLES];
+double samples_wl[NUM_VEL_SAMPLES];
+double samples_wr[NUM_VEL_SAMPLES];
 int velocity_index = 0;
+double set_point_wl;
+double set_point_wr;
+float motor_controller_p = 5.0;
 
 // IMU and Magnetometer
 LSM6 imu;
@@ -139,6 +142,9 @@ void setup() {
   // Get ros parameters
   int read_encoders_freq_hz = 
     ros_param_helper.getParam("read_encoders_freq_hz", 300);
+
+  int motor_controller_freq_hz =
+    ros_param_helper.getParam("motor_controller_freq_hz", 50);
   
   int publish_raw_odom_freq_hz = 
     ros_param_helper.getParam("publish_raw_odom_freq_hz", 100);
@@ -196,6 +202,7 @@ void setup() {
 
   // Setup Timer callbacks
   timer.every(convertFreqToMillis(read_encoders_freq_hz), doReadEncoders);
+  timer.every(convertFreqToMillis(motor_controller_freq_hz), doMotorController);
   timer.every(convertFreqToMillis(publish_raw_odom_freq_hz), doPublishRawOdom);
   timer.every(convertFreqToMillis(publish_raw_imu_freq_hz), doPublishRawImu);
   timer.every(BLINK_DURATION, doBlink);
@@ -207,6 +214,8 @@ void setup() {
   encoder_right_pos = 0.0;
   motor_left_speed = 0.0;
   motor_right_speed = 0.0;
+  set_point_wl = 0.0;
+  set_point_wr = 0.0;
   pose.x = 0.0;
   pose.y = 0.0;
   pose.theta = 0.0;
@@ -233,7 +242,8 @@ void loop() {
   // If no cmd_vel messages withing threshold time, something is wrong, stop the robot.
   cmd_vel_timeout_stop = (current_time.toSec() - last_cmd_vel_time.toSec()) > cmd_vel_timeout_threshold;
   if (cmd_vel_timeout_stop) {
-    setMotors(0, 0);
+    set_point_wl = 0;
+    set_point_wr = 0;
   }
 }
 
@@ -249,8 +259,17 @@ void cmdVelCallback(const geometry_msgs::Twist& cmd_vel_msg) {
   double vr = cmd_vel_msg.linear.x + (cmd_vel_msg.angular.z * TRACK_RADIUS);
 
   // Calculate wheel angular velocity
-  double wl = vl / WHEEL_RADIUS;
-  double wr = vr / WHEEL_RADIUS;
+  set_point_wl = vl / WHEEL_RADIUS;
+  set_point_wr = vr / WHEEL_RADIUS;
+}
+
+void doMotorController() {
+  // Get the current wheel angular velocity
+  double sensed_wl = getAngularVelocityFromSamples(samples_wl);
+  double sensed_wr = getAngularVelocityFromSamples(samples_wr);
+  
+  double wl = motor_controller_p * (set_point_wl - sensed_wl);
+  double wr = motor_controller_p * (set_point_wr - sensed_wr);
 
   // Calculate motor speed between -1 and 1
   double new_left_speed = max(-1, min(1, wl / MAX_SPEED));
@@ -274,8 +293,8 @@ void doReadEncoders() {
   double diff_r = static_cast<double>(new_encoder_right_pos) - encoder_right_pos;
   double diff_t = current_time.toSec() - last_encoder_read_time.toSec();
 
-  ang_v_samples_l[velocity_index] = ((-diff_l)/TICKS_PER_RADIAN)/diff_t;
-  ang_v_samples_r[velocity_index] = (diff_r/TICKS_PER_RADIAN)/diff_t;
+  samples_wl[velocity_index] = ((-diff_l)/TICKS_PER_RADIAN)/diff_t;
+  samples_wr[velocity_index] = (diff_r/TICKS_PER_RADIAN)/diff_t;
 
   velocity_index = (velocity_index + 1) % NUM_VEL_SAMPLES;
   encoder_left_pos = new_encoder_left_pos;
@@ -291,8 +310,8 @@ void doPublishRawOdom() {
   static ros::Time last_raw_odom_publish_time(current_time);
   
   // Get the current wheel angular velocity
-  double wl = getAngularVelocityFromSamples(ang_v_samples_l);
-  double wr = getAngularVelocityFromSamples(ang_v_samples_r);
+  double wl = getAngularVelocityFromSamples(samples_wl);
+  double wr = getAngularVelocityFromSamples(samples_wr);
   
   // Convert to wheel linear velocity
   double vl = wl * WHEEL_RADIUS;
