@@ -33,6 +33,7 @@
 #include <geometry_msgs/Pose2D.h>
 #include <geometry_msgs/Twist.h>
 #include <std_msgs/String.h>
+#include <victoria_debug_msgs/TeensyDebug.h>
 #include <victoria_nav_msgs/Odom2DRaw.h>
 #include <victoria_sensor_msgs/IMURaw.h>
 
@@ -50,20 +51,27 @@ Timer timer;
 
 // TRex motor controller
 HardwareSerial trex = HardwareSerial();
+bool trex_err;
+
+// Timeout, in seconds, for motor controller to receive a command,
+// after which the controller will shut down the motors.
+double motor_command_timeout;
+
+// Last motor speed set on motors.
 double motor_left_speed;
 double motor_right_speed;
 
 // Victoria constants
-const unsigned long TICKS_PER_RADIAN(9072); // TODO(mwomack): Verify real value
+const double TICKS_PER_RADIAN(9072);
 const double TRACK_RADIUS(0.235);  // in meters
 const double WHEEL_RADIUS(0.127);  // in meters
-const double MAX_SPEED(4.71);      // in meters/second
+const double MAX_SPEED(4.71);      // in radians/second
 
 // Motor encoders
 Encoder encoder_left(ENCODER_LEFT_PIN_1, ENCODER_LEFT_PIN_2);
 Encoder encoder_right(ENCODER_RIGHT_PIN_1, ENCODER_RIGHT_PIN_2);
-unsigned long encoder_left_pos;
-unsigned long encoder_right_pos;
+long encoder_left_pos;
+long encoder_right_pos;
 ros::Time last_encoder_read_time;
 
 const int NUM_VEL_SAMPLES(10);
@@ -111,6 +119,8 @@ std_msgs::String ros_debug_msg;
 
 ros::Publisher ros_bumper_debug_pub("bumper_debug", &ros_debug_msg);
 ros::Publisher ros_encoder_debug_pub("encoder_debug", &ros_debug_msg);
+victoria_debug_msgs::TeensyDebug teensy_debug_msg;
+ros::Publisher ros_teensy_debug_pub("teensy_debug", &teensy_debug_msg);
 
 // Debug blink
 // Blink duration is in milliseconds.
@@ -118,39 +128,6 @@ const int BLINK_DURATION(500);
 int blink_state = LOW;
   
 void setup() {
-  // Setup basic I2C master mode pins 18/19, external pullups, 400kHz, 200ms default timeout
-  Wire.begin(I2C_MASTER, 0x00, I2C_PINS_18_19, I2C_PULLUP_EXT, 400000);
-  Wire.setDefaultTimeout(200000); // 200ms
-
-  // Setup IMU and magnetometer that use I2C
-  if (imu.init()) {
-    imu.enableDefault();
-    // TODO(mwomack): set timeout?
-  } else {
-    imu_err = true;
-  }
-  
-  if (mag.init()) {
-    mag.enableDefault();
-    // TODO(mwomack): set timeout?
-  } else {
-    mag_err = true;
-  }
-    
-  // Start serial port to TRex
-  trex.begin(19200);
-
-  // Setup pin configurations
-  pinMode(BLINK_PIN, OUTPUT);
-
-  encoder_left_pos = 0.0;
-  encoder_right_pos = 0.0;
-  motor_left_speed = 0.0;
-  motor_right_speed = 0.0;
-  pose.x = 0.0;
-  pose.y = 0.0;
-  pose.theta = 0.0;
-
   unsigned long rosStartTimeout = millis() + 500;
 
   // Initialize and connect to ros
@@ -176,7 +153,37 @@ void setup() {
     ros_param_helper.getParam("publish_encoder_debug_info_freq_hz", 10);
 
   cmd_vel_timeout_threshold =
-    ros_param_helper.getParam("cmd_vel_timeout_threshold", 0.2);
+    ros_param_helper.getParam("cmd_vel_timeout_threshold", .5);
+
+  motor_command_timeout =
+    ros_param_helper.getParam("motor_command_timeout", 1);
+
+  // Initialize all the hardware
+  
+  // Setup basic I2C master mode pins 18/19, external pullups, 400kHz, 200ms default timeout
+  Wire.begin(I2C_MASTER, 0x00, I2C_PINS_18_19, I2C_PULLUP_EXT, 400000);
+  Wire.setDefaultTimeout(200000); // 200ms
+
+  // Setup IMU and magnetometer that use I2C
+  if (imu.init()) {
+    imu.enableDefault();
+    // TODO(mwomack): set timeout?
+  } else {
+    imu_err = true;
+  }
+  
+  if (mag.init()) {
+    mag.enableDefault();
+    // TODO(mwomack): set timeout?
+  } else {
+    mag_err = true;
+  }
+    
+  // Start the TRex
+  trex_err = startTRex();
+
+  // Setup pin configurations
+  pinMode(BLINK_PIN, OUTPUT);
 
   // Initialize ros publishers
   ros_raw_odom_msg.header.frame_id = ros_odom_header_frame_id;
@@ -196,12 +203,21 @@ void setup() {
   ros::Time current_time = ros_nh.now();
   last_cmd_vel_time = current_time;
   last_encoder_read_time = current_time;
+  encoder_left_pos = 0.0;
+  encoder_right_pos = 0.0;
+  motor_left_speed = 0.0;
+  motor_right_speed = 0.0;
+  pose.x = 0.0;
+  pose.y = 0.0;
+  pose.theta = 0.0;
 
   // Initialize ros debug publishers
   ros_nh.advertise(ros_bumper_debug_pub);
   ros_nh.advertise(ros_encoder_debug_pub);
+  ros_nh.advertise(ros_teensy_debug_pub);
   timer.every(convertFreqToMillis(publish_bumper_debug_info_freq_hz), doBumperDebug);
   timer.every(convertFreqToMillis(publish_encoder_debug_info_freq_hz), doEncoderDebug);
+  timer.every(convertFreqToMillis(1000), doTeensyDebug);
 }
 
 void loop() {
@@ -217,16 +233,13 @@ void loop() {
   // If no cmd_vel messages withing threshold time, something is wrong, stop the robot.
   cmd_vel_timeout_stop = (current_time.toSec() - last_cmd_vel_time.toSec()) > cmd_vel_timeout_threshold;
   if (cmd_vel_timeout_stop) {
-    motor_left_speed = 0;
-    motor_right_speed = 0;
+    setMotors(0, 0);
   }
-
-  // Set the motors to the current speed
-  setMotors(motor_left_speed, motor_right_speed);
 }
 
 /*
- * Callback used by ros_cmd_vel_sub to handle cmd_vel commands.
+ * Callback used by ros_cmd_vel_sub to handle cmd_vel commands, 
+ * set the motor speed.
  */
 void cmdVelCallback(const geometry_msgs::Twist& cmd_vel_msg) {
   last_cmd_vel_time = ros_nh.now();
@@ -240,8 +253,10 @@ void cmdVelCallback(const geometry_msgs::Twist& cmd_vel_msg) {
   double wr = vr / WHEEL_RADIUS;
 
   // Calculate motor speed between -1 and 1
-  motor_left_speed = max(-1, min(1, wl / MAX_SPEED));
-  motor_right_speed = max(-1, min(1, wr / MAX_SPEED));
+  double new_left_speed = max(-1, min(1, wl / MAX_SPEED));
+  double new_right_speed = max(-1, min(1, wr / MAX_SPEED));
+
+  setMotors(new_left_speed, new_right_speed);
 }
 
 /*
@@ -251,15 +266,15 @@ void cmdVelCallback(const geometry_msgs::Twist& cmd_vel_msg) {
  */
 void doReadEncoders() {
   ros::Time current_time = ros_nh.now();
-  unsigned long new_encoder_left_pos = encoder_left.read();
-  unsigned long new_encoder_right_pos = encoder_right.read();
+  long new_encoder_left_pos = encoder_left.read();
+  long new_encoder_right_pos = encoder_right.read();
 
   // TODO(mwomack): handle overflow/reset to 0
-  unsigned long diff_l = new_encoder_left_pos - encoder_left_pos;
-  unsigned long diff_r = new_encoder_right_pos - encoder_right_pos;
+  double diff_l = static_cast<double>(new_encoder_left_pos) - encoder_left_pos;
+  double diff_r = static_cast<double>(new_encoder_right_pos) - encoder_right_pos;
   double diff_t = current_time.toSec() - last_encoder_read_time.toSec();
 
-  ang_v_samples_l[velocity_index] = (diff_l/TICKS_PER_RADIAN)/diff_t;
+  ang_v_samples_l[velocity_index] = ((-diff_l)/TICKS_PER_RADIAN)/diff_t;
   ang_v_samples_r[velocity_index] = (diff_r/TICKS_PER_RADIAN)/diff_t;
 
   velocity_index = (velocity_index + 1) % NUM_VEL_SAMPLES;
@@ -392,20 +407,23 @@ void doPublishRawImu() {
  * to be between -1 and 1. Values outside this range
  * will be pinned.
  */
-void setMotors(double motor_left_speed, double motor_right_speed) {
-  byte command_byte_left = 0xC4;
+void setMotors(double new_motor_left_speed, double new_motor_right_speed) {
+  motor_left_speed = new_motor_left_speed;
+  motor_right_speed = new_motor_right_speed;
+  
+  byte command_byte_left = 0xCC;
   if (motor_left_speed < 0) {
-    command_byte_left = command_byte_left | 0x01;
-  } else {
     command_byte_left = command_byte_left | 0x02;
+  } else {
+    command_byte_left = command_byte_left | 0x01;
   }
   int trex_left_speed = min(127, 127.0 * abs(motor_left_speed));
 
-  byte command_byte_right = 0xCC;
+  byte command_byte_right = 0xC4;
   if (motor_right_speed < 0) {
-    command_byte_right = command_byte_right | 0x02;
-  } else {
     command_byte_right = command_byte_right | 0x01;
+  } else {
+    command_byte_right = command_byte_right | 0x02;
   }
   int trex_right_speed = min(127, 127.0 * abs(motor_right_speed));
   
@@ -422,10 +440,31 @@ void setMotors(double motor_left_speed, double motor_right_speed) {
  */
 double getAngularVelocityFromSamples(double* samples) {
   double total = 0;
-  for (int count = 0; count < NUM_VEL_SAMPLES; count++) {
+  for (size_t count = 0; count < NUM_VEL_SAMPLES; count++) {
     total += samples[count];
   }
   return total / NUM_VEL_SAMPLES;
+}
+
+bool startTRex() {
+  // TODO(mwomack): Move all the TRex stuff into a helper class!
+  
+  // Start serial port to TRex
+  trex.begin(19200);
+
+  // Set default parameters
+  // Set the serial timeout (see TRex parameter configuration documentation)
+  trex.write(0xAF); // Set configuration parameter command
+  trex.write(0x08); // Serial timeout parameter number
+  // Timeout in 10ths of second
+  byte timeout = max(127, (byte)(motor_command_timeout * 10));
+  trex.write(50); 
+  trex.write(0x55); // format byte 1
+  trex.write(0x2A); // format byte 2
+
+  while(!trex.available()) { }
+  
+  return (trex.read() == 0x00);
 }
 
 // Callback for blink
@@ -455,6 +494,16 @@ void doEncoderDebug() {
     encoder_right.read());
   ros_debug_msg.data = debug_str;
   ros_encoder_debug_pub.publish(&ros_debug_msg);
+}
+
+void doTeensyDebug() {
+  teensy_debug_msg.trex_err = trex_err;
+  teensy_debug_msg.imu_err = imu_err;
+  teensy_debug_msg.mag_err = mag_err;
+  teensy_debug_msg.motor_speed_left = motor_left_speed;
+  teensy_debug_msg.motor_speed_right = motor_right_speed;
+  teensy_debug_msg.last_cmd_vel_time = last_cmd_vel_time;
+  ros_teensy_debug_pub.publish(&teensy_debug_msg);
 }
 
 /*
