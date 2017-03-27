@@ -53,19 +53,15 @@ Timer timer;
 HardwareSerial trex = HardwareSerial();
 bool trex_err;
 
-// Timeout, in seconds, for motor controller to receive a command,
-// after which the controller will shut down the motors.
-double motor_command_timeout;
-
 // Last motor speed set on motors.
 double motor_left_speed;
 double motor_right_speed;
 
-// Victoria constants
-const double TICKS_PER_RADIAN(9072);
-const double TRACK_RADIUS(0.235);  // in meters
-const double WHEEL_RADIUS(0.127);  // in meters
-const double MAX_SPEED(4.71);      // in radians/second
+// Victoria configuration
+double ticks_per_radian;
+double track_radius;  // in meters
+double wheel_radius;  // in meters
+double max_speed;     // in radians/second
 
 // Motor encoders
 Encoder encoder_left(ENCODER_LEFT_PIN_1, ENCODER_LEFT_PIN_2);
@@ -77,7 +73,7 @@ ros::Time last_encoder_read_time;
 const int NUM_VEL_SAMPLES(10);
 double samples_wl[NUM_VEL_SAMPLES];
 double samples_wr[NUM_VEL_SAMPLES];
-int velocity_index = 0;
+int samples_w_index = 0;
 double set_point_wl;
 double set_point_wr;
 float motor_controller_p = 5.0;
@@ -131,11 +127,9 @@ const int BLINK_DURATION(500);
 int blink_state = LOW;
   
 void setup() {
-  unsigned long rosStartTimeout = millis() + 500;
-
   // Initialize and connect to ros
   ros_nh.initNode();
-  while(!ros_nh.connected() && millis() < rosStartTimeout) {
+  while(!ros_nh.connected()) {
     ros_nh.spinOnce();
   }
 
@@ -158,11 +152,23 @@ void setup() {
   int publish_encoder_debug_info_freq_hz =
     ros_param_helper.getParam("publish_encoder_debug_info_freq_hz", 10);
 
+  int publish_teensy_debug_info_freq_hz =
+    ros_param_helper.getParam("publish_teensy_debug_info_freq_hz", 1);
+
   cmd_vel_timeout_threshold =
     ros_param_helper.getParam("cmd_vel_timeout_threshold", .5);
 
-  motor_command_timeout =
-    ros_param_helper.getParam("motor_command_timeout", 1);
+  ticks_per_radian = 
+    ros_param_helper.getParam("victoria_ticks_per_radian", 9072);
+
+  track_radius = 
+    ros_param_helper.getParam("victoria_track_radius", 0.235);
+
+  wheel_radius = 
+    ros_param_helper.getParam("victoria_wheel_radius", 0.127);
+
+  max_speed = 
+    ros_param_helper.getParam("victoria_max_speed", 4.71);
 
   // Initialize all the hardware
   
@@ -226,7 +232,7 @@ void setup() {
   ros_nh.advertise(ros_teensy_debug_pub);
   timer.every(convertFreqToMillis(publish_bumper_debug_info_freq_hz), doBumperDebug);
   timer.every(convertFreqToMillis(publish_encoder_debug_info_freq_hz), doEncoderDebug);
-  timer.every(convertFreqToMillis(1000), doTeensyDebug);
+  timer.every(convertFreqToMillis(publish_teensy_debug_info_freq_hz), doTeensyDebug);
 }
 
 void loop() {
@@ -242,9 +248,13 @@ void loop() {
   // If no cmd_vel messages withing threshold time, something is wrong, stop the robot.
   cmd_vel_timeout_stop = (current_time.toSec() - last_cmd_vel_time.toSec()) > cmd_vel_timeout_threshold;
   if (cmd_vel_timeout_stop) {
-    set_point_wl = 0;
-    set_point_wr = 0;
+    setSetPoint(0, 0);
   }
+}
+
+void setSetPoint(double new_set_point_wl, double new_set_point_wr) {
+  set_point_wl = new_set_point_wl;
+  set_point_wr = new_set_point_wr;
 }
 
 /*
@@ -255,12 +265,11 @@ void cmdVelCallback(const geometry_msgs::Twist& cmd_vel_msg) {
   last_cmd_vel_time = ros_nh.now();
   
   // Calculate wheel linear velocity
-  double vl = cmd_vel_msg.linear.x - (cmd_vel_msg.angular.z * TRACK_RADIUS);
-  double vr = cmd_vel_msg.linear.x + (cmd_vel_msg.angular.z * TRACK_RADIUS);
+  double vl = cmd_vel_msg.linear.x - (cmd_vel_msg.angular.z * track_radius);
+  double vr = cmd_vel_msg.linear.x + (cmd_vel_msg.angular.z * track_radius);
 
   // Calculate wheel angular velocity
-  set_point_wl = vl / WHEEL_RADIUS;
-  set_point_wr = vr / WHEEL_RADIUS;
+  setSetPoint(vl / wheel_radius, vr / wheel_radius);
 }
 
 void doMotorController() {
@@ -272,8 +281,8 @@ void doMotorController() {
   double wr = motor_controller_p * (set_point_wr - sensed_wr);
 
   // Calculate motor speed between -1 and 1
-  double new_left_speed = max(-1, min(1, wl / MAX_SPEED));
-  double new_right_speed = max(-1, min(1, wr / MAX_SPEED));
+  double new_left_speed = max(-1, min(1, wl / max_speed));
+  double new_right_speed = max(-1, min(1, wr / max_speed));
 
   setMotors(new_left_speed, new_right_speed);
 }
@@ -293,10 +302,10 @@ void doReadEncoders() {
   double diff_r = static_cast<double>(new_encoder_right_pos) - encoder_right_pos;
   double diff_t = current_time.toSec() - last_encoder_read_time.toSec();
 
-  samples_wl[velocity_index] = ((-diff_l)/TICKS_PER_RADIAN)/diff_t;
-  samples_wr[velocity_index] = (diff_r/TICKS_PER_RADIAN)/diff_t;
+  samples_wl[samples_w_index] = ((-diff_l)/ticks_per_radian)/diff_t;
+  samples_wr[samples_w_index] = (diff_r/ticks_per_radian)/diff_t;
 
-  velocity_index = (velocity_index + 1) % NUM_VEL_SAMPLES;
+  samples_w_index = (samples_w_index + 1) % NUM_VEL_SAMPLES;
   encoder_left_pos = new_encoder_left_pos;
   encoder_right_pos = new_encoder_right_pos;
   last_encoder_read_time = current_time;
@@ -314,12 +323,12 @@ void doPublishRawOdom() {
   double wr = getAngularVelocityFromSamples(samples_wr);
   
   // Convert to wheel linear velocity
-  double vl = wl * WHEEL_RADIUS;
-  double vr = wr * WHEEL_RADIUS;
+  double vl = wl * wheel_radius;
+  double vr = wr * wheel_radius;
   
   // Calculate robot vx and vth
   double vx = (vl + vr)/2;
-  double vth = (vr - vl)/(2 * TRACK_RADIUS);
+  double vth = (vr - vl)/(2 * track_radius);
   
   // Calculate the deltas since
   double dt = current_time.toSec() - last_raw_odom_publish_time.toSec();
@@ -470,20 +479,7 @@ bool startTRex() {
   
   // Start serial port to TRex
   trex.begin(19200);
-
-  // Set default parameters
-  // Set the serial timeout (see TRex parameter configuration documentation)
-  trex.write(0xAF); // Set configuration parameter command
-  trex.write(0x08); // Serial timeout parameter number
-  // Timeout in 10ths of second
-  byte timeout = max(127, (byte)(motor_command_timeout * 10));
-  trex.write(50); 
-  trex.write(0x55); // format byte 1
-  trex.write(0x2A); // format byte 2
-
-  while(!trex.available()) { }
-  
-  return (trex.read() == 0x00);
+  return true;
 }
 
 // Callback for blink
