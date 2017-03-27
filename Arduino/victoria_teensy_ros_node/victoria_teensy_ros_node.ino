@@ -127,6 +127,16 @@ const int BLINK_DURATION(500);
 int blink_state = LOW;
   
 void setup() {
+  // Register ros publishers
+  ros_nh.advertise(ros_raw_odom_pub);
+  ros_nh.advertise(ros_raw_imu_pub);
+  ros_nh.advertise(ros_bumper_debug_pub);
+  ros_nh.advertise(ros_encoder_debug_pub);
+  ros_nh.advertise(ros_teensy_debug_pub);
+
+  // Register ros subscribers
+  ros_nh.subscribe(ros_cmd_vel_sub);
+  
   // Initialize and connect to ros
   ros_nh.initNode();
   while(!ros_nh.connected()) {
@@ -197,23 +207,19 @@ void setup() {
   // Setup pin configurations
   pinMode(BLINK_PIN, OUTPUT);
 
-  // Initialize ros publishers
-  ros_raw_odom_msg.header.frame_id = ros_odom_header_frame_id;
-  ros_raw_odom_msg.child_frame_id = ros_odom_child_frame_id;
-  ros_nh.advertise(ros_raw_odom_pub);
-  ros_nh.advertise(ros_raw_imu_pub);
-
-  // Initialize ros subscribers
-  ros_nh.subscribe(ros_cmd_vel_sub);
-
   // Setup Timer callbacks
   timer.every(convertFreqToMillis(read_encoders_freq_hz), doReadEncoders);
   timer.every(convertFreqToMillis(motor_controller_freq_hz), doMotorController);
   timer.every(convertFreqToMillis(publish_raw_odom_freq_hz), doPublishRawOdom);
   timer.every(convertFreqToMillis(publish_raw_imu_freq_hz), doPublishRawImu);
+  timer.every(convertFreqToMillis(publish_bumper_debug_info_freq_hz), doBumperDebug);
+  timer.every(convertFreqToMillis(publish_encoder_debug_info_freq_hz), doEncoderDebug);
+  timer.every(convertFreqToMillis(publish_teensy_debug_info_freq_hz), doTeensyDebug);
   timer.every(BLINK_DURATION, doBlink);
 
   ros::Time current_time = ros_nh.now();
+  ros_raw_odom_msg.header.frame_id = ros_odom_header_frame_id;
+  ros_raw_odom_msg.child_frame_id = ros_odom_child_frame_id;
   last_cmd_vel_time = current_time;
   last_encoder_read_time = current_time;
   encoder_left_pos = 0.0;
@@ -225,14 +231,6 @@ void setup() {
   pose.x = 0.0;
   pose.y = 0.0;
   pose.theta = 0.0;
-
-  // Initialize ros debug publishers
-  ros_nh.advertise(ros_bumper_debug_pub);
-  ros_nh.advertise(ros_encoder_debug_pub);
-  ros_nh.advertise(ros_teensy_debug_pub);
-  timer.every(convertFreqToMillis(publish_bumper_debug_info_freq_hz), doBumperDebug);
-  timer.every(convertFreqToMillis(publish_encoder_debug_info_freq_hz), doEncoderDebug);
-  timer.every(convertFreqToMillis(publish_teensy_debug_info_freq_hz), doTeensyDebug);
 }
 
 void loop() {
