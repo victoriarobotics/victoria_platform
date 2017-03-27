@@ -74,8 +74,8 @@ const int NUM_VEL_SAMPLES(10);
 double samples_wl[NUM_VEL_SAMPLES];
 double samples_wr[NUM_VEL_SAMPLES];
 int samples_w_index = 0;
-double set_point_wl;
-double set_point_wr;
+double reference_wl;
+double reference_wr;
 float motor_controller_p = 5.0;
 
 // IMU and Magnetometer
@@ -220,8 +220,8 @@ void setup() {
   encoder_right_pos = 0.0;
   motor_left_speed = 0.0;
   motor_right_speed = 0.0;
-  set_point_wl = 0.0;
-  set_point_wr = 0.0;
+  reference_wl = 0.0;
+  reference_wr = 0.0;
   pose.x = 0.0;
   pose.y = 0.0;
   pose.theta = 0.0;
@@ -248,13 +248,13 @@ void loop() {
   // If no cmd_vel messages withing threshold time, something is wrong, stop the robot.
   cmd_vel_timeout_stop = (current_time.toSec() - last_cmd_vel_time.toSec()) > cmd_vel_timeout_threshold;
   if (cmd_vel_timeout_stop) {
-    setSetPoint(0, 0);
+    setReferenceVelocity(0, 0);
   }
 }
 
-void setSetPoint(double new_set_point_wl, double new_set_point_wr) {
-  set_point_wl = new_set_point_wl;
-  set_point_wr = new_set_point_wr;
+void setReferenceVelocity(double new_wl, double new_wr) {
+  reference_wl = new_wl;
+  reference_wr = new_wr;
 }
 
 /*
@@ -268,8 +268,8 @@ void cmdVelCallback(const geometry_msgs::Twist& cmd_vel_msg) {
   double vl = cmd_vel_msg.linear.x - (cmd_vel_msg.angular.z * track_radius);
   double vr = cmd_vel_msg.linear.x + (cmd_vel_msg.angular.z * track_radius);
 
-  // Calculate wheel angular velocity
-  setSetPoint(vl / wheel_radius, vr / wheel_radius);
+  // Calculate and set  refrence wheel angular velocity
+  setReferenceVelocity(vl / wheel_radius, vr / wheel_radius);
 }
 
 void doMotorController() {
@@ -277,8 +277,8 @@ void doMotorController() {
   double sensed_wl = getAngularVelocityFromSamples(samples_wl);
   double sensed_wr = getAngularVelocityFromSamples(samples_wr);
   
-  double wl = motor_controller_p * (set_point_wl - sensed_wl);
-  double wr = motor_controller_p * (set_point_wr - sensed_wr);
+  double wl = motor_controller_p * (reference_wl - sensed_wl);
+  double wr = motor_controller_p * (reference_wr - sensed_wr);
 
   // Calculate motor speed between -1 and 1
   double new_left_speed = max(-1, min(1, wl / max_speed));
