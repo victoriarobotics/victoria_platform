@@ -172,10 +172,10 @@ void setup() {
     ros_param_helper.getParam("victoria_ticks_per_radian", 9072);
 
   track_radius = 
-    ros_param_helper.getParam("victoria_track_radius", 0.235);
+    ros_param_helper.getParam("victoria_track_radius", 0.255);
 
   wheel_radius = 
-    ros_param_helper.getParam("victoria_wheel_radius", 0.127);
+    ros_param_helper.getParam("victoria_wheel_radius", 0.875);
 
   max_speed = 
     ros_param_helper.getParam("victoria_max_speed", 4.71);
