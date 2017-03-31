@@ -53,6 +53,11 @@ Timer timer;
 HardwareSerial trex = HardwareSerial();
 bool trex_err;
 
+// Timeout, in seconds, for commands to the
+// motor controller, after which the motors
+// will stop until the next command is sent.
+double motor_controller_cmd_timeout;
+
 // Last motor speed set on motors.
 double motor_left_speed;
 double motor_right_speed;
@@ -166,7 +171,10 @@ void setup() {
     ros_param_helper.getParam("publish_teensy_debug_info_freq_hz", 1);
 
   cmd_vel_timeout_threshold =
-    ros_param_helper.getParam("cmd_vel_timeout_threshold", .5);
+    ros_param_helper.getParam("cmd_vel_timeout_threshold", 0.5);
+
+  motor_controller_cmd_timeout = 
+    ros_param_helper.getParam("motor_controller_cmd_timeout", 0.5);
 
   ticks_per_radian = 
     ros_param_helper.getParam("victoria_ticks_per_radian", 9072);
@@ -477,7 +485,17 @@ bool startTRex() {
   
   // Start serial port to TRex
   trex.begin(19200);
-  return true;
+  while (!trex) { }
+
+  // Set serial timeout to motor_controller_cmd_timeout
+  trex.write(0xAF); // Set configuration parameter
+  trex.write(0x07); // Serial timeout parameter
+  byte timeout = max(127, motor_controller_cmd_timeout * 10);
+  trex.write(timeout); // timeout in 10ths of a second
+  trex.write(0x55); // constant format byte 1
+  trex.write(0x2A); // constant format byte 2
+  while (!trex.available()) {}
+  return (trex.read() == 0x00);
 }
 
 // Callback for blink
