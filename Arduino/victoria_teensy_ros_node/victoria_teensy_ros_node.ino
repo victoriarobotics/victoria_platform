@@ -191,7 +191,9 @@ void setup() {
   // Initialize all the hardware
   
   // Setup basic I2C master mode pins 18/19, external pullups, 400kHz, 200ms default timeout
-  Wire.begin(I2C_MASTER, 0x00, I2C_PINS_18_19, I2C_PULLUP_EXT, 400000);
+  const uint8_t IGNORED(0x00);
+  const uint32_t I2C_BUS_RATE_400KHZ(400000);
+  Wire.begin(I2C_MASTER, IGNORED, I2C_PINS_18_19, I2C_PULLUP_EXT, I2C_BUS_RATE_400KHZ);
   Wire.setDefaultTimeout(200000); // 200ms
 
   // Setup IMU and magnetometer that use I2C
