@@ -232,8 +232,8 @@ void setup() {
   ros_raw_odom_msg.child_frame_id = ros_odom_child_frame_id;
   last_cmd_vel_time = current_time;
   last_encoder_read_time = current_time;
-  encoder_left_pos = 0.0;
-  encoder_right_pos = 0.0;
+  encoder_left_pos = 0;
+  encoder_right_pos = 0;
   motor_left_speed = 0.0;
   motor_right_speed = 0.0;
   reference_wl = 0.0;
@@ -536,6 +536,13 @@ void doTeensyDebug() {
   teensy_debug_msg.motor_speed_left = motor_left_speed;
   teensy_debug_msg.motor_speed_right = motor_right_speed;
   teensy_debug_msg.last_cmd_vel_time = last_cmd_vel_time;
+  teensy_debug_msg.encoder_left = encoder_left_pos;
+  teensy_debug_msg.encoder_right = encoder_right_pos;
+  teensy_debug_msg.last_encoder_read_time = last_encoder_read_time;
+  teensy_debug_msg.w_left = getAngularVelocityFromSamples(samples_wl);
+  teensy_debug_msg.w_right = getAngularVelocityFromSamples(samples_wr);
+  teensy_debug_msg.bumper_left = analogRead(BUMPER_LEFT_PIN);
+  teensy_debug_msg.bumper_right = analogRead(BUMPER_RIGHT_PIN);
   ros_teensy_debug_pub.publish(&teensy_debug_msg);
 }
 
