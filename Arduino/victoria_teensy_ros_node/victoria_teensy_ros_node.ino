@@ -391,8 +391,8 @@ geometry_msgs::Vector3 convertAccelerometer(const LSM6& imu) {
 geometry_msgs::Vector3 convertGyro(const LSM6& imu) {
   // LSM6DS33 data sheet has accelerometer default
   // full scale setting with a conversion factor of
-  // 0.061/LSB mg. Convert to g (* .001), 
-  // and 1 g = 9.81 m/s^2.
+  // 4.375/LSB mdps. Convert to dps (* .001), 
+  // and 1 dps = 0.01745329251994 rad/sec.
   static const double conversionFactor(4.375 * 0.001 * 0.01745329251994);
 
   geometry_msgs::Vector3 converted;
