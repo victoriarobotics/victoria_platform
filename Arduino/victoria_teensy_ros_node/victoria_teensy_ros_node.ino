@@ -35,6 +35,7 @@
 #include <std_msgs/String.h>
 #include <victoria_debug_msgs/TeensyDebug.h>
 #include <victoria_nav_msgs/Odom2DRaw.h>
+#include <victoria_sensor_msgs/ContactState1D.h>
 #include <victoria_sensor_msgs/IMURaw.h>
 
 // Teensy pin definitions
@@ -112,31 +113,43 @@ ros::Publisher ros_raw_odom_pub("odom_2d_raw", &ros_raw_odom_msg);
 victoria_sensor_msgs::IMURaw ros_raw_imu_msg;
 ros::Publisher ros_raw_imu_pub("imu_raw", &ros_raw_imu_msg);
 
+// Bumper publishers
+victoria_sensor_msgs::ContactState1D ros_bumper_left_msg;
+victoria_sensor_msgs::ContactState1D ros_bumper_right_msg;
+ros::Publisher ros_bumper_left_pub("bumper_left", &ros_bumper_left_msg);
+ros::Publisher ros_bumper_right_pub("bumper_right", &ros_bumper_right_msg);
+// TODO(mwomack): Get readings from robot
+const int MIN_RAW_LEFT_BUMPER(650);
+const int MAX_RAW_LEFT_BUMPER(450);
+const double MAX_FORCE_LEFT_BUMPER(1.0);
+const int MIN_RAW_RIGHT_BUMPER(650);
+const int MAX_RAW_RIGHT_BUMPER(450);
+const double MAX_FORCE_RIGHT_BUMPER(1.0);
+
 // Position of robot
 geometry_msgs::Pose2D pose;
 
 char ros_odom_header_frame_id[] = "/odom";
 char ros_odom_child_frame_id[] = "/base_link";
 
+// Debug publishers
 char debug_str[80];
 std_msgs::String ros_debug_msg;
 
-ros::Publisher ros_bumper_debug_pub("bumper_debug", &ros_debug_msg);
-ros::Publisher ros_encoder_debug_pub("encoder_debug", &ros_debug_msg);
 victoria_debug_msgs::TeensyDebug teensy_debug_msg;
 ros::Publisher ros_teensy_debug_pub("teensy_debug", &teensy_debug_msg);
 
 // Debug blink
-// Blink duration is in milliseconds.
-const int BLINK_DURATION(500);
+// Blink duration is in hertz.
+const int BLINK_FREQ_HZ(2);
 int blink_state = LOW;
   
 void setup() {
   // Register ros publishers
   ros_nh.advertise(ros_raw_odom_pub);
   ros_nh.advertise(ros_raw_imu_pub);
-  ros_nh.advertise(ros_bumper_debug_pub);
-  ros_nh.advertise(ros_encoder_debug_pub);
+  ros_nh.advertise(ros_bumper_left_pub);
+  ros_nh.advertise(ros_bumper_right_pub);
   ros_nh.advertise(ros_teensy_debug_pub);
 
   // Register ros subscribers
@@ -161,12 +174,9 @@ void setup() {
   int publish_raw_imu_freq_hz = 
     ros_param_helper.getParam("publish_raw_imu_freq_hz", 2);
 
-  int publish_bumper_debug_info_freq_hz = 
-    ros_param_helper.getParam("publish_bumper_debug_info_freq_hz", 10);
-
-  int publish_encoder_debug_info_freq_hz =
-    ros_param_helper.getParam("publish_encoder_debug_info_freq_hz", 10);
-
+  int publish_bumper_info_freq_hz = 
+    ros_param_helper.getParam("publish_bumper_info_freq_hz", 10);
+    
   int publish_teensy_debug_info_freq_hz =
     ros_param_helper.getParam("publish_teensy_debug_info_freq_hz", 1);
 
@@ -218,14 +228,13 @@ void setup() {
   pinMode(BLINK_PIN, OUTPUT);
 
   // Setup Timer callbacks
-  timer.every(convertFreqToMillis(read_encoders_freq_hz), doReadEncoders);
-  timer.every(convertFreqToMillis(motor_controller_freq_hz), doMotorController);
-  timer.every(convertFreqToMillis(publish_raw_odom_freq_hz), doPublishRawOdom);
-  timer.every(convertFreqToMillis(publish_raw_imu_freq_hz), doPublishRawImu);
-  timer.every(convertFreqToMillis(publish_bumper_debug_info_freq_hz), doBumperDebug);
-  timer.every(convertFreqToMillis(publish_encoder_debug_info_freq_hz), doEncoderDebug);
-  timer.every(convertFreqToMillis(publish_teensy_debug_info_freq_hz), doTeensyDebug);
-  timer.every(BLINK_DURATION, doBlink);
+  setupTimerCallback(read_encoders_freq_hz, doReadEncoders);
+  setupTimerCallback(motor_controller_freq_hz, doMotorController);
+  setupTimerCallback(publish_raw_odom_freq_hz, doPublishRawOdom);
+  setupTimerCallback(publish_raw_imu_freq_hz, doPublishRawImu);
+  setupTimerCallback(publish_bumper_info_freq_hz, doPublishBumpers);
+  setupTimerCallback(publish_teensy_debug_info_freq_hz, doTeensyDebug);
+  setupTimerCallback(BLINK_FREQ_HZ, doBlink);
 
   ros::Time current_time = ros_nh.now();
   ros_raw_odom_msg.header.frame_id = ros_odom_header_frame_id;
@@ -280,7 +289,7 @@ void cmdVelCallback(const geometry_msgs::Twist& cmd_vel_msg) {
   setReferenceVelocity(vl / wheel_radius, vr / wheel_radius);
 }
 
-void doMotorController() {
+void doMotorController(void) {
   // Get the current wheel angular velocity
   double sensed_wl = getAngularVelocityFromSamples(samples_wl);
   double sensed_wr = getAngularVelocityFromSamples(samples_wr);
@@ -300,7 +309,7 @@ void doMotorController() {
  * the difference with the previous value from the encoders
  * to calculate the angular velocity of each wheel.
  */
-void doReadEncoders() {
+void doReadEncoders(void) {
   ros::Time current_time = ros_nh.now();
   long new_encoder_left_pos = encoder_left.read();
   long new_encoder_right_pos = encoder_right.read();
@@ -322,7 +331,7 @@ void doReadEncoders() {
 /*
  * Publish raw odometry to ros.
  */
-void doPublishRawOdom() {
+void doPublishRawOdom(void) {
   ros::Time current_time = ros_nh.now();
   static ros::Time last_raw_odom_publish_time(current_time);
   
@@ -422,7 +431,7 @@ geometry_msgs::Vector3 convertMagnetometer(const LIS3MDL& mag) {
 /*
  * Publish imu data to ros.
  */
-void doPublishRawImu() {
+void doPublishRawImu(void) {
   ros::Time current_time = ros_nh.now();
   imu.read();
   mag.read();
@@ -436,6 +445,38 @@ void doPublishRawImu() {
   ros_raw_imu_msg.magnetometer = convertMagnetometer(mag);
 
   ros_raw_imu_pub.publish(&ros_raw_imu_msg);
+}
+
+/*
+ * Publish bumper data to ros.
+ */
+void doPublishBumpers(void) {
+  ros::Time current_time = ros_nh.now();
+
+  int rawBumperLeft = analogRead(BUMPER_LEFT_PIN);
+  int rawBumperRight = analogRead(BUMPER_RIGHT_PIN);
+
+  double bumperLeft = MAX_FORCE_LEFT_BUMPER 
+                        * ((rawBumperLeft - MIN_RAW_LEFT_BUMPER)
+                            /((double)(MAX_RAW_LEFT_BUMPER - MIN_RAW_LEFT_BUMPER)));
+  double bumperRight = MAX_FORCE_RIGHT_BUMPER 
+                        * ((rawBumperRight - MIN_RAW_RIGHT_BUMPER)
+                            /((double)(MAX_RAW_RIGHT_BUMPER - MIN_RAW_RIGHT_BUMPER)));
+
+  ros_bumper_left_msg.header.stamp = current_time;
+  // TODO(mwomack): set header frame to what?
+  ros_bumper_left_msg.min_value = 0.0;
+  ros_bumper_left_msg.max_value = MAX_FORCE_LEFT_BUMPER;
+  ros_bumper_left_msg.value = bumperLeft;
+  
+  ros_bumper_right_msg.header.stamp = current_time;
+  // TODO(mwomack): set header frame to what?
+  ros_bumper_right_msg.min_value = 0.0;
+  ros_bumper_right_msg.max_value = MAX_FORCE_RIGHT_BUMPER;
+  ros_bumper_right_msg.value = bumperRight;
+
+  ros_raw_imu_pub.publish(&ros_bumper_left_msg);
+  ros_raw_imu_pub.publish(&ros_bumper_right_msg);
 }
 
 /*
@@ -510,25 +551,6 @@ void doBlink() {
   digitalWrite(BLINK_PIN, blink_state);
 }
 
-void doBumperDebug() {
-  // Read the bumper sensors
-  snprintf(debug_str, sizeof(debug_str), 
-    "L: %d    R: %d", 
-    analogRead(BUMPER_LEFT_PIN),
-    analogRead(BUMPER_RIGHT_PIN));
-  ros_debug_msg.data = debug_str;
-  ros_bumper_debug_pub.publish(&ros_debug_msg);
-}
-
-void doEncoderDebug() {
-  // Read the encoders
-  snprintf(debug_str, sizeof(debug_str), "L: %ld    R: %ld",
-    encoder_left.read(), 
-    encoder_right.read());
-  ros_debug_msg.data = debug_str;
-  ros_encoder_debug_pub.publish(&ros_debug_msg);
-}
-
 void doTeensyDebug() {
   teensy_debug_msg.trex_err = trex_err;
   teensy_debug_msg.imu_err = imu_err;
@@ -546,14 +568,14 @@ void doTeensyDebug() {
   ros_teensy_debug_pub.publish(&teensy_debug_msg);
 }
 
-/*
- * Converts a frequency in hertz to the
- * number of milliseconds to match the
- * frequency. For example, 2 hz = 500 millis
- * or 100 hz = 10 millis.
+/**
+ * Sets up a callback that is called at the
+ * given frequency.
  */
-int convertFreqToMillis(int frequency) {
-  return static_cast<int>((1.0/frequency) * 1000);
+void setupTimerCallback(int callback_freq_hz, void (*callback)(void)) {
+  // Convert frequency in hertz to milliseconds
+  int callback_millis = static_cast<int>((1.0/callback_freq_hz) * 1000);
+  timer.every(callback_millis, callback);
 }
 
 /**
