@@ -118,19 +118,9 @@ victoria_sensor_msgs::ContactState1D ros_bumper_left_msg;
 victoria_sensor_msgs::ContactState1D ros_bumper_right_msg;
 ros::Publisher ros_bumper_left_pub("bumper_left", &ros_bumper_left_msg);
 ros::Publisher ros_bumper_right_pub("bumper_right", &ros_bumper_right_msg);
-// TODO(mwomack): Get readings from robot
-const int MIN_RAW_LEFT_BUMPER(650);
-const int MAX_RAW_LEFT_BUMPER(450);
-const double MAX_FORCE_LEFT_BUMPER(1.0);
-const int MIN_RAW_RIGHT_BUMPER(650);
-const int MAX_RAW_RIGHT_BUMPER(450);
-const double MAX_FORCE_RIGHT_BUMPER(1.0);
 
 // Position of robot
 geometry_msgs::Pose2D pose;
-
-char ros_odom_header_frame_id[] = "/odom";
-char ros_odom_child_frame_id[] = "/base_link";
 
 // Debug publishers
 char debug_str[80];
@@ -143,7 +133,10 @@ ros::Publisher ros_teensy_debug_pub("teensy_debug", &teensy_debug_msg);
 // Blink duration is in hertz.
 const int BLINK_FREQ_HZ(2);
 int blink_state = LOW;
-  
+
+// Forward declarations
+void setupTimerCallback(int callback_freq_hz, void (*callback)(void));
+
 void setup() {
   // Register ros publishers
   ros_nh.advertise(ros_raw_odom_pub);
@@ -237,8 +230,10 @@ void setup() {
   setupTimerCallback(BLINK_FREQ_HZ, doBlink);
 
   ros::Time current_time = ros_nh.now();
-  ros_raw_odom_msg.header.frame_id = ros_odom_header_frame_id;
-  ros_raw_odom_msg.child_frame_id = ros_odom_child_frame_id;
+  ros_raw_odom_msg.header.frame_id = "/odom";
+  ros_raw_odom_msg.child_frame_id = "/base_link";
+  ros_bumper_left_msg.header.frame_id = "/bumper_left";
+  ros_bumper_right_msg.header.frame_id = "/bumper_right";
   last_cmd_vel_time = current_time;
   last_encoder_read_time = current_time;
   encoder_left_pos = 0;
@@ -451,26 +446,33 @@ void doPublishRawImu(void) {
  * Publish bumper data to ros.
  */
 void doPublishBumpers(void) {
+  // TODO(mwomack): Get readings from robot
+  static const int MIN_RAW_LEFT_BUMPER(650);
+  static const int MAX_RAW_LEFT_BUMPER(450);
+  static const double RANGE_RAW_LEFT_BUMPER(MAX_RAW_LEFT_BUMPER - MIN_RAW_LEFT_BUMPER);
+  static const double MAX_FORCE_LEFT_BUMPER(1.0);
+  static const int MIN_RAW_RIGHT_BUMPER(650);
+  static const int MAX_RAW_RIGHT_BUMPER(450);
+  static const double RANGE_RAW_RIGHT_BUMPER(MAX_RAW_RIGHT_BUMPER - MIN_RAW_RIGHT_BUMPER);
+  static const double MAX_FORCE_RIGHT_BUMPER(1.0);
+  
   ros::Time current_time = ros_nh.now();
 
   int rawBumperLeft = analogRead(BUMPER_LEFT_PIN);
   int rawBumperRight = analogRead(BUMPER_RIGHT_PIN);
 
+
   double bumperLeft = MAX_FORCE_LEFT_BUMPER 
-                        * ((rawBumperLeft - MIN_RAW_LEFT_BUMPER)
-                            /((double)(MAX_RAW_LEFT_BUMPER - MIN_RAW_LEFT_BUMPER)));
+                        * ((rawBumperLeft - MIN_RAW_LEFT_BUMPER) / RANGE_RAW_LEFT_BUMPER);
   double bumperRight = MAX_FORCE_RIGHT_BUMPER 
-                        * ((rawBumperRight - MIN_RAW_RIGHT_BUMPER)
-                            /((double)(MAX_RAW_RIGHT_BUMPER - MIN_RAW_RIGHT_BUMPER)));
+                        * ((rawBumperRight - MIN_RAW_RIGHT_BUMPER) / RANGE_RAW_RIGHT_BUMPER);
 
   ros_bumper_left_msg.header.stamp = current_time;
-  // TODO(mwomack): set header frame to what?
   ros_bumper_left_msg.min_value = 0.0;
   ros_bumper_left_msg.max_value = MAX_FORCE_LEFT_BUMPER;
   ros_bumper_left_msg.value = bumperLeft;
   
   ros_bumper_right_msg.header.stamp = current_time;
-  // TODO(mwomack): set header frame to what?
   ros_bumper_right_msg.min_value = 0.0;
   ros_bumper_right_msg.max_value = MAX_FORCE_RIGHT_BUMPER;
   ros_bumper_right_msg.value = bumperRight;
@@ -574,7 +576,7 @@ void doTeensyDebug() {
  */
 void setupTimerCallback(int callback_freq_hz, void (*callback)(void)) {
   // Convert frequency in hertz to milliseconds
-  int callback_millis = static_cast<int>((1.0/callback_freq_hz) * 1000);
+  int callback_millis = (1000/callback_freq_hz);
   timer.every(callback_millis, callback);
 }
 
