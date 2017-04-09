@@ -123,9 +123,6 @@ ros::Publisher ros_bumper_right_pub("bumper_right", &ros_bumper_right_msg);
 geometry_msgs::Pose2D pose;
 
 // Debug publishers
-char debug_str[80];
-std_msgs::String ros_debug_msg;
-
 victoria_debug_msgs::TeensyDebug teensy_debug_msg;
 ros::Publisher ros_teensy_debug_pub("teensy_debug", &teensy_debug_msg);
 
@@ -149,6 +146,7 @@ void setup() {
   ros_nh.subscribe(ros_cmd_vel_sub);
   
   // Initialize and connect to ros
+  ros_nh.getHardware()->setBaud(115200);
   ros_nh.initNode();
   while(!ros_nh.connected()) {
     ros_nh.spinOnce();
@@ -177,7 +175,7 @@ void setup() {
     ros_param_helper.getParam("cmd_vel_timeout_threshold", 0.5);
 
   motor_controller_cmd_timeout = 
-    ros_param_helper.getParam("motor_controller_cmd_timeout", 0.5);
+    ros_param_helper.getParam("motor_controller_cmd_timeout", 0.75);
 
   ticks_per_radian = 
     ros_param_helper.getParam("victoria_ticks_per_radian", 9072);
@@ -461,7 +459,6 @@ void doPublishBumpers(void) {
   int rawBumperLeft = analogRead(BUMPER_LEFT_PIN);
   int rawBumperRight = analogRead(BUMPER_RIGHT_PIN);
 
-
   double bumperLeft = MAX_FORCE_LEFT_BUMPER 
                         * ((rawBumperLeft - MIN_RAW_LEFT_BUMPER) / RANGE_RAW_LEFT_BUMPER);
   double bumperRight = MAX_FORCE_RIGHT_BUMPER 
@@ -477,8 +474,8 @@ void doPublishBumpers(void) {
   ros_bumper_right_msg.max_value = MAX_FORCE_RIGHT_BUMPER;
   ros_bumper_right_msg.value = bumperRight;
 
-  ros_raw_imu_pub.publish(&ros_bumper_left_msg);
-  ros_raw_imu_pub.publish(&ros_bumper_right_msg);
+  ros_bumper_left_pub.publish(&ros_bumper_left_msg);
+  ros_bumper_right_pub.publish(&ros_bumper_right_msg);
 }
 
 /*
@@ -540,7 +537,7 @@ bool startTRex() {
   trex.write(0x55); // constant format byte 1
   trex.write(0x2A); // constant format byte 2
   while (!trex.available()) {}
-  return (trex.read() == 0x00);
+  return (trex.read() != 0x00);
 }
 
 // Callback for blink
