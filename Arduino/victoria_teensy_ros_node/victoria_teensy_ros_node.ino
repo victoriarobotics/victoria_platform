@@ -522,6 +522,10 @@ double getAngularVelocityFromSamples(double* samples) {
   return total / NUM_VEL_SAMPLES;
 }
 
+/*
+ * Starts up the TReX motor controller. Returns false if
+ * started without any error.
+ */
 bool startTRex() {
   // TODO(mwomack): Move all the TRex stuff into a helper class!
   
