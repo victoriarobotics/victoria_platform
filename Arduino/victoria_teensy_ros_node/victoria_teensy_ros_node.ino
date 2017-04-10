@@ -59,6 +59,11 @@ bool trex_err;
 // will stop until the next command is sent.
 double motor_controller_cmd_timeout;
 
+// Amount to increase speed of motors when
+// set speed is greater than current speed.
+// Will be applied every 100 milliseconds.
+byte motor_controller_acceleration;
+
 // Last motor speed set on motors.
 double motor_left_speed;
 double motor_right_speed;
@@ -176,6 +181,9 @@ void setup() {
 
   motor_controller_cmd_timeout = 
     ros_param_helper.getParam("motor_controller_cmd_timeout", 0.75);
+
+  motor_controller_acceleration =
+    ros_param_helper.getParam("motor_controller_acceleration", 10);
 
   ticks_per_radian = 
     ros_param_helper.getParam("victoria_ticks_per_radian", 9072);
@@ -522,26 +530,46 @@ double getAngularVelocityFromSamples(double* samples) {
   return total / NUM_VEL_SAMPLES;
 }
 
+bool setTRexConfiguration(byte parameter, byte value) {
+  trex.write(0xAF);      // Set configuration parameter command
+  trex.write(parameter); // Set parameter to change
+  trex.write(value);     // Set the value
+  trex.write(0x55);      // constant format byte 1
+  trex.write(0x2A);      // constant format byte 2
+  while (!trex.available()) {}
+  return (trex.read() != 0x00);
+}
+
 /*
  * Starts up the TReX motor controller. Returns false if
  * started without any error.
  */
 bool startTRex() {
   // TODO(mwomack): Move all the TRex stuff into a helper class!
+  static const byte SERIAL_TIMEOUT_PARAM(0x07);
+  static const byte MOTOR_1_ACCELERATION_PARAM(0x0E);
+  static const byte MOTOR_2_ACCELERATION_PARAM(0x0F);
   
   // Start serial port to TRex
   trex.begin(19200);
   while (!trex) { }
 
   // Set serial timeout to motor_controller_cmd_timeout
-  trex.write(0xAF); // Set configuration parameter
-  trex.write(0x07); // Serial timeout parameter
   byte timeout = max(127, motor_controller_cmd_timeout * 10);
-  trex.write(timeout); // timeout in 10ths of a second
-  trex.write(0x55); // constant format byte 1
-  trex.write(0x2A); // constant format byte 2
-  while (!trex.available()) {}
-  return (trex.read() != 0x00);
+  if (setTRexConfiguration(SERIAL_TIMEOUT_PARAM, timeout)) {
+    return true;
+  }
+
+  // Set motor 1 and 2 acceleration
+  byte motor_acceleration = max(127, motor_controller_acceleration);
+  if (setTRexConfiguration(MOTOR_1_ACCELERATION_PARAM, motor_acceleration)) {
+    return true;
+  }
+  if (setTRexConfiguration(MOTOR_2_ACCELERATION_PARAM, motor_acceleration)) {
+    return true;
+  }
+
+  return false;
 }
 
 // Callback for blink
