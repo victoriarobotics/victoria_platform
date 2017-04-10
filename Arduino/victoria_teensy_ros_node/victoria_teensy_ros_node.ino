@@ -39,6 +39,11 @@
 #include <victoria_sensor_msgs/IMURaw.h>
 
 // Teensy pin definitions
+const int FOB_STOP_1_PIN(2);       // Teensy digital pin 2
+const int FOB_STOP_2_PIN(3);       // Teensy digital pin 3
+const int FOB_STOP_3_PIN(4);       // Teensy digital pin 4
+const int FOB_STOP_4_PIN(5);       // Teensy digital pin 5
+const int E_STOP_PIN(6);           // Teensy digital pin 6
 const int BLINK_PIN(13);           // Teensy digital pin 13
 const int ENCODER_LEFT_PIN_1(29);  // Teensy digital pin 29
 const int ENCODER_LEFT_PIN_2(30);  // Teensy digital pin 30
@@ -67,6 +72,13 @@ byte motor_controller_acceleration;
 // Last motor speed set on motors.
 double motor_left_speed;
 double motor_right_speed;
+
+// External stop state, false if no intervention required.
+bool external_stop;
+
+// Fob mode, 0 indicates no fobs should be checked. 1-4
+// indicates which fob to check.
+byte fob_mode;
 
 // Victoria configuration
 double ticks_per_radian;
@@ -106,7 +118,7 @@ RosParamHelper ros_param_helper(ros_nh);
 // to stop robot activity
 double cmd_vel_timeout_threshold;
 ros::Time last_cmd_vel_time;
-bool cmd_vel_timeout_stop = false; // Set to true if time out threshold has been exceeded
+bool cmd_vel_timeout_exceeded = false; // Set to true if time out threshold has been exceeded
 void cmdVelCallback(const geometry_msgs::Twist& twist_msg);
 ros::Subscriber<geometry_msgs::Twist> ros_cmd_vel_sub("cmd_vel", cmdVelCallback);
 
@@ -241,11 +253,14 @@ void setup() {
   ros_bumper_left_msg.header.frame_id = "/bumper_left";
   ros_bumper_right_msg.header.frame_id = "/bumper_right";
   last_cmd_vel_time = current_time;
+  cmd_vel_timeout_exceeded = false;
   last_encoder_read_time = current_time;
   encoder_left_pos = 0;
   encoder_right_pos = 0;
   motor_left_speed = 0.0;
   motor_right_speed = 0.0;
+  external_stop = false;
+  fob_mode = 0;
   reference_wl = 0.0;
   reference_wr = 0.0;
   pose.x = 0.0;
@@ -257,6 +272,9 @@ void loop() {
 
   ros::Time current_time = ros_nh.now();
 
+  // Check for external stop intervention.
+  external_stop = checkEStop() || checkFobStops();
+  
   // Update any timer callbacks
   timer.update();
 
@@ -264,9 +282,29 @@ void loop() {
   ros_nh.spinOnce();
   
   // If no cmd_vel messages withing threshold time, something is wrong, stop the robot.
-  cmd_vel_timeout_stop = (current_time.toSec() - last_cmd_vel_time.toSec()) > cmd_vel_timeout_threshold;
-  if (cmd_vel_timeout_stop) {
-    setReferenceVelocity(0, 0);
+  cmd_vel_timeout_exceeded = (current_time.toSec() - last_cmd_vel_time.toSec()) > cmd_vel_timeout_threshold;
+}
+
+bool checkEStop(void) {
+  return (digitalRead(E_STOP_PIN) == LOW);
+}
+
+bool checkFobStops(void) {
+  switch(fob_mode) {
+    case 1:
+      return (digitalRead(FOB_STOP_1_PIN) == LOW);
+      
+    case 2:
+      return (digitalRead(FOB_STOP_2_PIN) == LOW);
+      
+    case 3:
+      return (digitalRead(FOB_STOP_3_PIN) == LOW);
+      
+    case 4:
+      return (digitalRead(FOB_STOP_4_PIN) == LOW);
+      
+    default:
+      return false;
   }
 }
 
@@ -291,6 +329,12 @@ void cmdVelCallback(const geometry_msgs::Twist& cmd_vel_msg) {
 }
 
 void doMotorController(void) {
+
+  // If cmd vel timeout or external stop, stop the motors.
+  if (cmd_vel_timeout_exceeded || external_stop) {
+    setReferenceVelocity(0, 0);
+  }
+  
   // Get the current wheel angular velocity
   double sensed_wl = getAngularVelocityFromSamples(samples_wl);
   double sensed_wr = getAngularVelocityFromSamples(samples_wr);
@@ -632,6 +676,7 @@ void doTeensyDebug() {
   teensy_debug_msg.motor_speed_left = motor_left_speed;
   teensy_debug_msg.motor_speed_right = motor_right_speed;
   teensy_debug_msg.last_cmd_vel_time = last_cmd_vel_time;
+  teensy_debug_msg.cmd_vel_timeout_exceeded = cmd_vel_timeout_exceeded;
   teensy_debug_msg.encoder_left = encoder_left_pos;
   teensy_debug_msg.encoder_right = encoder_right_pos;
   teensy_debug_msg.last_encoder_read_time = last_encoder_read_time;
@@ -639,6 +684,12 @@ void doTeensyDebug() {
   teensy_debug_msg.w_right = getAngularVelocityFromSamples(samples_wr);
   teensy_debug_msg.bumper_left = analogRead(BUMPER_LEFT_PIN);
   teensy_debug_msg.bumper_right = analogRead(BUMPER_RIGHT_PIN);
+  teensy_debug_msg.e_stop = checkEStop();
+  teensy_debug_msg.fob_mode = fob_mode;
+  teensy_debug_msg.fob_stop_1 = (fob_mode == 1 && digitalRead(FOB_STOP_1_PIN) == LOW);
+  teensy_debug_msg.fob_stop_2 = (fob_mode == 2 && digitalRead(FOB_STOP_1_PIN) == LOW);
+  teensy_debug_msg.fob_stop_3 = (fob_mode == 3 && digitalRead(FOB_STOP_1_PIN) == LOW);
+  teensy_debug_msg.fob_stop_4 = (fob_mode == 4 && digitalRead(FOB_STOP_1_PIN) == LOW);
   ros_teensy_debug_pub.publish(&teensy_debug_msg);
 }
 
