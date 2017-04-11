@@ -273,7 +273,7 @@ void loop() {
   ros::Time current_time = ros_nh.now();
 
   // Check for external stop intervention.
-  external_stop = checkEStop() || checkFobStops();
+  external_stop = checkEStop() || checkFobStop(fob_mode);
   
   // Update any timer callbacks
   timer.update();
@@ -285,12 +285,23 @@ void loop() {
   cmd_vel_timeout_exceeded = (current_time.toSec() - last_cmd_vel_time.toSec()) > cmd_vel_timeout_threshold;
 }
 
+/**
+ * Checks the state input for the estop control.
+ */
 bool checkEStop(void) {
   return (digitalRead(E_STOP_PIN) == LOW);
 }
 
-bool checkFobStops(void) {
-  switch(fob_mode) {
+/**
+ * Checks the state of the input for the given
+ * fob stop.
+ */
+bool checkFobStop(byte fob_stop_to_check) {
+  if (fob_mode != fob_stop_to_check) {
+    return false;
+  }
+  
+  switch(fob_stop_to_check) {
     case 1:
       return (digitalRead(FOB_STOP_1_PIN) == LOW);
       
@@ -686,10 +697,10 @@ void doTeensyDebug() {
   teensy_debug_msg.bumper_right = analogRead(BUMPER_RIGHT_PIN);
   teensy_debug_msg.e_stop = checkEStop();
   teensy_debug_msg.fob_mode = fob_mode;
-  teensy_debug_msg.fob_stop_1 = (fob_mode == 1 && digitalRead(FOB_STOP_1_PIN) == LOW);
-  teensy_debug_msg.fob_stop_2 = (fob_mode == 2 && digitalRead(FOB_STOP_1_PIN) == LOW);
-  teensy_debug_msg.fob_stop_3 = (fob_mode == 3 && digitalRead(FOB_STOP_1_PIN) == LOW);
-  teensy_debug_msg.fob_stop_4 = (fob_mode == 4 && digitalRead(FOB_STOP_1_PIN) == LOW);
+  teensy_debug_msg.fob_stop_1 = checkFobStop(1);
+  teensy_debug_msg.fob_stop_2 = checkFobStop(2);
+  teensy_debug_msg.fob_stop_3 = checkFobStop(3);
+  teensy_debug_msg.fob_stop_4 = checkFobStop(4);
   ros_teensy_debug_pub.publish(&teensy_debug_msg);
 }
 
