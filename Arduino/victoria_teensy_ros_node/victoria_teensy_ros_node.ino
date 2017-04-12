@@ -451,39 +451,65 @@ void doPublishRawImu(void) {
 /*
  * Publish bumper data to ros.
  */
+static const int NUM_BUMPER_SAMPLES(7);
+
 void doPublishBumpers(void) {
-  // TODO(mwomack): Get readings from robot
-  static const int MIN_RAW_LEFT_BUMPER(650);
-  static const int MAX_RAW_LEFT_BUMPER(450);
-  static const double RANGE_RAW_LEFT_BUMPER(MAX_RAW_LEFT_BUMPER - MIN_RAW_LEFT_BUMPER);
-  static const double MAX_FORCE_LEFT_BUMPER(1.0);
-  static const int MIN_RAW_RIGHT_BUMPER(650);
-  static const int MAX_RAW_RIGHT_BUMPER(450);
-  static const double RANGE_RAW_RIGHT_BUMPER(MAX_RAW_RIGHT_BUMPER - MIN_RAW_RIGHT_BUMPER);
-  static const double MAX_FORCE_RIGHT_BUMPER(1.0);
+  // These values come from samples taken directly from the robot.
+  static const int BUMPER_BASE_LEFT(620);
+  static const int BUMPER_RAW_SAMPLES_LEFT[NUM_BUMPER_SAMPLES] = { 0, 60, 144, 216, 250, 277, 287 };
+  static const double BUMPER_DISTANCE_SAMPLES_LEFT[NUM_BUMPER_SAMPLES] = { 0, 2.46, 4.05, 6.25, 8.7, 10.88, 12.01 };
+  static const int BUMPER_BASE_RIGHT(629);
+  static const int BUMPER_RAW_SAMPLES_RIGHT[NUM_BUMPER_SAMPLES] = { 0, 85, 172, 238, 265, 285 , 291 };
+  static const double BUMPER_DISTANCE_SAMPLES_RIGHT[NUM_BUMPER_SAMPLES] = { 0, 2.53, 4.06, 6.27, 8.9, 10.95, 12.06 };
   
   ros::Time current_time = ros_nh.now();
 
-  int rawBumperLeft = analogRead(BUMPER_LEFT_PIN);
-  int rawBumperRight = analogRead(BUMPER_RIGHT_PIN);
-
-  double bumperLeft = MAX_FORCE_LEFT_BUMPER 
-                        * ((rawBumperLeft - MIN_RAW_LEFT_BUMPER) / RANGE_RAW_LEFT_BUMPER);
-  double bumperRight = MAX_FORCE_RIGHT_BUMPER 
-                        * ((rawBumperRight - MIN_RAW_RIGHT_BUMPER) / RANGE_RAW_RIGHT_BUMPER);
-
+  // Read the current values, normalize to the base value.
+  int raw_bumper_left = BUMPER_BASE_LEFT - analogRead(BUMPER_LEFT_PIN);
+  int raw_bumper_right = BUMPER_BASE_RIGHT - analogRead(BUMPER_RIGHT_PIN);
+  
+  double bumper_left = calculateBumperDistance(raw_bumper_left, BUMPER_RAW_SAMPLES_LEFT, BUMPER_DISTANCE_SAMPLES_LEFT);
+  double bumper_right = calculateBumperDistance(raw_bumper_right, BUMPER_RAW_SAMPLES_RIGHT, BUMPER_DISTANCE_SAMPLES_RIGHT);
+  
   ros_bumper_left_msg.header.stamp = current_time;
   ros_bumper_left_msg.min_value = 0.0;
-  ros_bumper_left_msg.max_value = MAX_FORCE_LEFT_BUMPER;
-  ros_bumper_left_msg.value = bumperLeft;
+  ros_bumper_left_msg.max_value = BUMPER_DISTANCE_SAMPLES_LEFT[NUM_BUMPER_SAMPLES - 1];
+  ros_bumper_left_msg.value = bumper_left;
   
   ros_bumper_right_msg.header.stamp = current_time;
   ros_bumper_right_msg.min_value = 0.0;
-  ros_bumper_right_msg.max_value = MAX_FORCE_RIGHT_BUMPER;
-  ros_bumper_right_msg.value = bumperRight;
+  ros_bumper_right_msg.max_value = BUMPER_DISTANCE_SAMPLES_RIGHT[NUM_BUMPER_SAMPLES - 1];
+  ros_bumper_right_msg.value = bumper_right;
 
   ros_bumper_left_pub.publish(&ros_bumper_left_msg);
   ros_bumper_right_pub.publish(&ros_bumper_right_msg);
+}
+
+/**
+ * Calculate the distance the bumper sensor has moved based on the
+ * given reading and samples of reading and distances.
+ */
+double calculateBumperDistance(int reading, const int* reading_samples, const double* distance_samples) {
+  // Pin the reading to between the min and max sample values
+  reading = min(max(reading_samples[0], reading), reading_samples[NUM_BUMPER_SAMPLES-1]);
+
+  // Find the index of the samples the reading falls into
+  int index = 1;
+  for (; index < NUM_BUMPER_SAMPLES; index++) {
+    // Because of the min/max above, this is guaranteed to find an index.
+    if (reading_samples[index] >= reading) {
+      break;
+    }
+  }
+  
+  // Calculate the percentage the reading falls between the end points of the sample segment.
+  double intermediatePercentage = 
+    (reading - reading_samples[index-1])
+      / static_cast<double>(reading_samples[index] - reading_samples[index - 1]);
+  // Calculate length of the sample segment.
+  double intermediateDistance = distance_samples[index] - distance_samples[index - 1];
+  // Return the total distance the bumper sensor has moved.
+  return distance_samples[index - 1] + (intermediatePercentage * intermediateDistance);
 }
 
 /*
