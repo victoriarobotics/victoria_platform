@@ -74,11 +74,11 @@ double motor_left_speed;
 double motor_right_speed;
 
 // External stop state, false if no intervention required.
-bool external_stop = false;
+bool external_stop(false);
 
 // Fob mode, 0 indicates no fobs should be checked. 1-4
 // indicates which fob to check.
-byte fob_mode = 0;
+byte fob_mode(0);
 
 // Victoria configuration
 double ticks_per_radian;
@@ -118,7 +118,7 @@ RosParamHelper ros_param_helper(ros_nh);
 // to stop robot activity
 double cmd_vel_timeout_threshold;
 ros::Time last_cmd_vel_time;
-bool cmd_vel_timeout_exceeded = false; // Will be set to true if time out threshold has been exceeded
+bool cmd_vel_timeout_exceeded(false); // Will be set to true if time out threshold has been exceeded
 void cmdVelCallback(const geometry_msgs::Twist& twist_msg);
 ros::Subscriber<geometry_msgs::Twist> ros_cmd_vel_sub("cmd_vel", cmdVelCallback);
 
