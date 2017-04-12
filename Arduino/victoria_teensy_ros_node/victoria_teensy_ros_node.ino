@@ -523,7 +523,7 @@ double calculateBumperDistance(int reading, const int* reading_samples, const do
   
   // Calculate the percentage the reading falls between the end points of the sample segment.
   double intermediatePercentage = 
-    (reading - reading_sample_lower)/ static_cast<double>(reading_sample_upper - reading_sample_lower);
+    (reading - reading_sample_lower) / static_cast<double>(reading_sample_upper - reading_sample_lower);
     
   // Return the total distance the bumper sensor has moved.
   return distance_sample_lower + (intermediatePercentage * (distance_sample_upper - distance_sample_lower));
