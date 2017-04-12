@@ -496,11 +496,6 @@ void doPublishBumpers(void) {
 double calculateBumperDistance(int reading, const int* reading_samples, const double* distance_samples, int sample_size) {
   // Pin the reading to between the min and max sample values
   reading = min(max(reading_samples[0], reading), reading_samples[sample_size-1]);
-
-  int reading_sample_upper;
-  int reading_sample_lower;
-  double distance_sample_upper;
-  double distance_sample_lower;
   
   int index = 1;
   
@@ -509,10 +504,10 @@ double calculateBumperDistance(int reading, const int* reading_samples, const do
     index++;
   }
   
-  reading_sample_upper = reading_samples[index];
-  reading_sample_lower = reading_samples[index - 1];
-  distance_sample_upper = distance_samples[index];
-  distance_sample_lower = distance_samples[index - 1];
+  int reading_sample_upper = reading_samples[index];
+  int reading_sample_lower = reading_samples[index - 1];
+  double distance_sample_upper = distance_samples[index];
+  double distance_sample_lower = distance_samples[index - 1];
   
   // Calculate the percentage the reading falls between the end points of the sample segment.
   double intermediatePercentage = 
