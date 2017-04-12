@@ -475,12 +475,12 @@ void doPublishBumpers(void) {
   ros_bumper_left_msg.header.stamp = current_time;
   ros_bumper_left_msg.min_value = 0.0;
   ros_bumper_left_msg.max_value = BUMPER_DISTANCE_SAMPLES_LEFT[NUM_BUMPER_SAMPLES - 1];
-  ros_bumper_left_msg.current_value = bumper_left;
+  ros_bumper_left_msg.displacement = bumper_left;
   
   ros_bumper_right_msg.header.stamp = current_time;
   ros_bumper_right_msg.min_value = 0.0;
   ros_bumper_right_msg.max_value = BUMPER_DISTANCE_SAMPLES_RIGHT[NUM_BUMPER_SAMPLES - 1];
-  ros_bumper_right_msg.current_value = bumper_right;
+  ros_bumper_right_msg.displacement = bumper_right;
 
   ros_bumper_left_pub.publish(&ros_bumper_left_msg);
   ros_bumper_right_pub.publish(&ros_bumper_right_msg);
