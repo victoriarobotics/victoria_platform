@@ -457,31 +457,43 @@ void doPublishBumpers(void) {
   // Each sensor sample has a distance sample associated with it. For sensor
   // readings that fall between sampled values, a linear approximation is
   // calculated for the distance between samples.
-  // Sampled distances are in meters.
+  // Sensor values are arranged in the array from lowest to highest,
+  // normalized to zero. The base sensor value is will be subtracted from
+  // any sensor reading to normalize to zero.
+  // Sampled distances are in meters, and are arranged in the array from
+  // lowest to highest, normalized to zero.
+  // Sensor samples were recorded manually using the Teensy, distance samples
+  // were recorded manually using a caliper.
   static const int NUM_BUMPER_SAMPLES(7);
   static const int BUMPER_BASE_LEFT(620);
-  static const int BUMPER_RAW_SAMPLES_LEFT[NUM_BUMPER_SAMPLES] = { 0, 60, 144, 216, 250, 277, 287 };
-  static const double BUMPER_DISTANCE_SAMPLES_LEFT[NUM_BUMPER_SAMPLES] = { 0, 0.00246, 0.00405, 0.00625, 0.0087, 0.01088, 0.01201 };
+  static const int BUMPER_RAW_SAMPLES_LEFT[NUM_BUMPER_SAMPLES] = 
+    { 0, 60, 144, 216, 250, 277, 287 };
+  static const double BUMPER_DISTANCE_SAMPLES_LEFT[NUM_BUMPER_SAMPLES] = 
+    { 0.0, 0.00246, 0.00405, 0.00625, 0.0087, 0.01088, 0.01201 };
   static const int BUMPER_BASE_RIGHT(629);
-  static const int BUMPER_RAW_SAMPLES_RIGHT[NUM_BUMPER_SAMPLES] = { 0, 85, 172, 238, 265, 285 , 291 };
-  static const double BUMPER_DISTANCE_SAMPLES_RIGHT[NUM_BUMPER_SAMPLES] = { 0, 0.00253, 0.00406, 0.00627, 0.0089, 0.01095, 0.01206 };
+  static const int BUMPER_RAW_SAMPLES_RIGHT[NUM_BUMPER_SAMPLES] = 
+    { 0, 85, 172, 238, 265, 285 , 291 };
+  static const double BUMPER_DISTANCE_SAMPLES_RIGHT[NUM_BUMPER_SAMPLES] = 
+    { 0.0, 0.00253, 0.00406, 0.00627, 0.0089, 0.01095, 0.01206 };
   
   ros::Time current_time = ros_nh.now();
 
-  // Read the current values, normalize to the base value.
+  // Read the current values, normalize to zero using base value.
   int raw_bumper_left = BUMPER_BASE_LEFT - analogRead(BUMPER_LEFT_PIN);
   int raw_bumper_right = BUMPER_BASE_RIGHT - analogRead(BUMPER_RIGHT_PIN);
   
-  double bumper_left = calculateBumperDistance(raw_bumper_left, BUMPER_RAW_SAMPLES_LEFT, BUMPER_DISTANCE_SAMPLES_LEFT, NUM_BUMPER_SAMPLES);
-  double bumper_right = calculateBumperDistance(raw_bumper_right, BUMPER_RAW_SAMPLES_RIGHT, BUMPER_DISTANCE_SAMPLES_RIGHT, NUM_BUMPER_SAMPLES);
+  double bumper_left = calculateBumperDistance(
+    raw_bumper_left, BUMPER_RAW_SAMPLES_LEFT, BUMPER_DISTANCE_SAMPLES_LEFT, NUM_BUMPER_SAMPLES);
+  double bumper_right = calculateBumperDistance(
+    raw_bumper_right, BUMPER_RAW_SAMPLES_RIGHT, BUMPER_DISTANCE_SAMPLES_RIGHT, NUM_BUMPER_SAMPLES);
   
   ros_bumper_left_msg.header.stamp = current_time;
-  ros_bumper_left_msg.min_value = 0.0;
+  ros_bumper_left_msg.min_value = BUMPER_DISTANCE_SAMPLES_LEFT[0];
   ros_bumper_left_msg.max_value = BUMPER_DISTANCE_SAMPLES_LEFT[NUM_BUMPER_SAMPLES - 1];
   ros_bumper_left_msg.displacement = bumper_left;
   
   ros_bumper_right_msg.header.stamp = current_time;
-  ros_bumper_right_msg.min_value = 0.0;
+  ros_bumper_right_msg.min_value = BUMPER_DISTANCE_SAMPLES_RIGHT[0];
   ros_bumper_right_msg.max_value = BUMPER_DISTANCE_SAMPLES_RIGHT[NUM_BUMPER_SAMPLES - 1];
   ros_bumper_right_msg.displacement = bumper_right;
 
@@ -495,7 +507,7 @@ void doPublishBumpers(void) {
  */
 double calculateBumperDistance(int reading, const int* reading_samples, const double* distance_samples, int sample_size) {
   // Pin the reading to between the min and max sample values
-  reading = min(max(reading_samples[0], reading), reading_samples[sample_size-1]);
+  reading = min(max(reading_samples[0], reading), reading_samples[sample_size - 1]);
   
   int index = 1;
   
