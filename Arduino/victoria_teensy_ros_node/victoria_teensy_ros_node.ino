@@ -35,7 +35,7 @@
 #include <std_msgs/String.h>
 #include <victoria_debug_msgs/TeensyDebug.h>
 #include <victoria_nav_msgs/Odom2DRaw.h>
-#include <victoria_sensor_msgs/ContactState1D.h>
+#include <victoria_sensor_msgs/DistanceDisplacement1D.h>
 #include <victoria_sensor_msgs/IMURaw.h>
 
 // Teensy pin definitions
@@ -119,8 +119,8 @@ victoria_sensor_msgs::IMURaw ros_raw_imu_msg;
 ros::Publisher ros_raw_imu_pub("imu_raw", &ros_raw_imu_msg);
 
 // Bumper publishers
-victoria_sensor_msgs::ContactState1D ros_bumper_left_msg;
-victoria_sensor_msgs::ContactState1D ros_bumper_right_msg;
+victoria_sensor_msgs::DistanceDisplacement1D ros_bumper_left_msg;
+victoria_sensor_msgs::DistanceDisplacement1D ros_bumper_right_msg;
 ros::Publisher ros_bumper_left_pub("bumper_left", &ros_bumper_left_msg);
 ros::Publisher ros_bumper_right_pub("bumper_right", &ros_bumper_right_msg);
 
@@ -452,38 +452,81 @@ void doPublishRawImu(void) {
  * Publish bumper data to ros.
  */
 void doPublishBumpers(void) {
-  // TODO(mwomack): Get readings from robot
-  static const int MIN_RAW_LEFT_BUMPER(650);
-  static const int MAX_RAW_LEFT_BUMPER(450);
-  static const double RANGE_RAW_LEFT_BUMPER(MAX_RAW_LEFT_BUMPER - MIN_RAW_LEFT_BUMPER);
-  static const double MAX_FORCE_LEFT_BUMPER(1.0);
-  static const int MIN_RAW_RIGHT_BUMPER(650);
-  static const int MAX_RAW_RIGHT_BUMPER(450);
-  static const double RANGE_RAW_RIGHT_BUMPER(MAX_RAW_RIGHT_BUMPER - MIN_RAW_RIGHT_BUMPER);
-  static const double MAX_FORCE_RIGHT_BUMPER(1.0);
+  // These values were read as samples from the robot and collected here
+  // to return a distance value for any sensor reading from the robot.
+  // Each sensor sample has a distance sample associated with it. For sensor
+  // readings that fall between sampled values, a linear approximation is
+  // calculated for the distance between samples.
+  // Sensor values are arranged in the array from lowest to highest,
+  // normalized to zero. The base sensor value is will be subtracted from
+  // any sensor reading to normalize to zero.
+  // Sampled distances are in meters, and are arranged in the array from
+  // lowest to highest, normalized to zero.
+  // Sensor samples were recorded manually using the Teensy, distance samples
+  // were recorded manually using a caliper.
+  static const int NUM_BUMPER_SAMPLES(7);
+  static const int BUMPER_BASE_LEFT(620);
+  static const int BUMPER_RAW_SAMPLES_LEFT[NUM_BUMPER_SAMPLES] = 
+    { 0, 60, 144, 216, 250, 277, 287 };
+  static const double BUMPER_DISTANCE_SAMPLES_LEFT[NUM_BUMPER_SAMPLES] = 
+    { 0.0, 0.00246, 0.00405, 0.00625, 0.0087, 0.01088, 0.01201 };
+  static const int BUMPER_BASE_RIGHT(629);
+  static const int BUMPER_RAW_SAMPLES_RIGHT[NUM_BUMPER_SAMPLES] = 
+    { 0, 85, 172, 238, 265, 285 , 291 };
+  static const double BUMPER_DISTANCE_SAMPLES_RIGHT[NUM_BUMPER_SAMPLES] = 
+    { 0.0, 0.00253, 0.00406, 0.00627, 0.0089, 0.01095, 0.01206 };
   
   ros::Time current_time = ros_nh.now();
 
-  int rawBumperLeft = analogRead(BUMPER_LEFT_PIN);
-  int rawBumperRight = analogRead(BUMPER_RIGHT_PIN);
-
-  double bumperLeft = MAX_FORCE_LEFT_BUMPER 
-                        * ((rawBumperLeft - MIN_RAW_LEFT_BUMPER) / RANGE_RAW_LEFT_BUMPER);
-  double bumperRight = MAX_FORCE_RIGHT_BUMPER 
-                        * ((rawBumperRight - MIN_RAW_RIGHT_BUMPER) / RANGE_RAW_RIGHT_BUMPER);
-
+  // Read the current values, normalize to zero using base value.
+  int raw_bumper_left = BUMPER_BASE_LEFT - analogRead(BUMPER_LEFT_PIN);
+  int raw_bumper_right = BUMPER_BASE_RIGHT - analogRead(BUMPER_RIGHT_PIN);
+  
+  double bumper_left = calculateBumperDistance(
+    raw_bumper_left, BUMPER_RAW_SAMPLES_LEFT, BUMPER_DISTANCE_SAMPLES_LEFT, NUM_BUMPER_SAMPLES);
+  double bumper_right = calculateBumperDistance(
+    raw_bumper_right, BUMPER_RAW_SAMPLES_RIGHT, BUMPER_DISTANCE_SAMPLES_RIGHT, NUM_BUMPER_SAMPLES);
+  
   ros_bumper_left_msg.header.stamp = current_time;
-  ros_bumper_left_msg.min_value = 0.0;
-  ros_bumper_left_msg.max_value = MAX_FORCE_LEFT_BUMPER;
-  ros_bumper_left_msg.value = bumperLeft;
+  ros_bumper_left_msg.min_value = BUMPER_DISTANCE_SAMPLES_LEFT[0];
+  ros_bumper_left_msg.max_value = BUMPER_DISTANCE_SAMPLES_LEFT[NUM_BUMPER_SAMPLES - 1];
+  ros_bumper_left_msg.displacement = bumper_left;
   
   ros_bumper_right_msg.header.stamp = current_time;
-  ros_bumper_right_msg.min_value = 0.0;
-  ros_bumper_right_msg.max_value = MAX_FORCE_RIGHT_BUMPER;
-  ros_bumper_right_msg.value = bumperRight;
+  ros_bumper_right_msg.min_value = BUMPER_DISTANCE_SAMPLES_RIGHT[0];
+  ros_bumper_right_msg.max_value = BUMPER_DISTANCE_SAMPLES_RIGHT[NUM_BUMPER_SAMPLES - 1];
+  ros_bumper_right_msg.displacement = bumper_right;
 
   ros_bumper_left_pub.publish(&ros_bumper_left_msg);
   ros_bumper_right_pub.publish(&ros_bumper_right_msg);
+}
+
+/**
+ * Calculate the distance the bumper sensor has moved based on the
+ * given reading and samples of reading and distances.
+ */
+double calculateBumperDistance(int reading, const int* reading_samples, const double* distance_samples, int sample_size) {
+  // Pin the reading to between the min and max sample values
+  reading = min(max(reading_samples[0], reading), reading_samples[sample_size - 1]);
+  
+  int index = 1;
+  
+  // Because of the min/max above, this is guaranteed to find a match
+  while(reading_samples[index] < reading) {
+    index++;
+  }
+  
+  int reading_sample_upper = reading_samples[index];
+  int reading_sample_lower = reading_samples[index - 1];
+  double distance_sample_upper = distance_samples[index];
+  double distance_sample_lower = distance_samples[index - 1];
+  
+  // Calculate the percentage the reading falls between the end points of the sample segment.
+  double intermediatePercentage = 
+    (reading - reading_sample_lower) / static_cast<double>(reading_sample_upper - reading_sample_lower);
+    
+  // Return the total distance the bumper sensor has moved.
+  return distance_sample_lower + (intermediatePercentage * (distance_sample_upper - distance_sample_lower));
 }
 
 /*
