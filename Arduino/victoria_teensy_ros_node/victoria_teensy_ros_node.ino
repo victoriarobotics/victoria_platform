@@ -451,11 +451,14 @@ void doPublishRawImu(void) {
 /*
  * Publish bumper data to ros.
  */
-static const int NUM_BUMPER_SAMPLES(7);
-
 void doPublishBumpers(void) {
-  // These values come from samples taken directly from the robot.
-  // Distances are in meters.
+  // These values were read as samples from the robot and collected here
+  // to return a distance value for any sensor reading from the robot.
+  // Each sensor sample has a distance sample associated with it. For sensor
+  // readings that fall between sampled values, a linear approximation is
+  // calculated for the distance between samples.
+  // Sampled distances are in meters.
+  static const int NUM_BUMPER_SAMPLES(7);
   static const int BUMPER_BASE_LEFT(620);
   static const int BUMPER_RAW_SAMPLES_LEFT[NUM_BUMPER_SAMPLES] = { 0, 60, 144, 216, 250, 277, 287 };
   static const double BUMPER_DISTANCE_SAMPLES_LEFT[NUM_BUMPER_SAMPLES] = { 0, 0.00246, 0.00405, 0.00625, 0.0087, 0.01088, 0.01201 };
@@ -469,8 +472,8 @@ void doPublishBumpers(void) {
   int raw_bumper_left = BUMPER_BASE_LEFT - analogRead(BUMPER_LEFT_PIN);
   int raw_bumper_right = BUMPER_BASE_RIGHT - analogRead(BUMPER_RIGHT_PIN);
   
-  double bumper_left = calculateBumperDistance(raw_bumper_left, BUMPER_RAW_SAMPLES_LEFT, BUMPER_DISTANCE_SAMPLES_LEFT);
-  double bumper_right = calculateBumperDistance(raw_bumper_right, BUMPER_RAW_SAMPLES_RIGHT, BUMPER_DISTANCE_SAMPLES_RIGHT);
+  double bumper_left = calculateBumperDistance(raw_bumper_left, BUMPER_RAW_SAMPLES_LEFT, BUMPER_DISTANCE_SAMPLES_LEFT, NUM_BUMPER_SAMPLES);
+  double bumper_right = calculateBumperDistance(raw_bumper_right, BUMPER_RAW_SAMPLES_RIGHT, BUMPER_DISTANCE_SAMPLES_RIGHT, NUM_BUMPER_SAMPLES);
   
   ros_bumper_left_msg.header.stamp = current_time;
   ros_bumper_left_msg.min_value = 0.0;
@@ -490,27 +493,33 @@ void doPublishBumpers(void) {
  * Calculate the distance the bumper sensor has moved based on the
  * given reading and samples of reading and distances.
  */
-double calculateBumperDistance(int reading, const int* reading_samples, const double* distance_samples) {
+double calculateBumperDistance(int reading, const int* reading_samples, const double* distance_samples, int sample_size) {
   // Pin the reading to between the min and max sample values
-  reading = min(max(reading_samples[0], reading), reading_samples[NUM_BUMPER_SAMPLES-1]);
+  reading = min(max(reading_samples[0], reading), reading_samples[sample_size-1]);
 
-  // Find the index of the samples the reading falls into
+  int reading_sample_upper;
+  int reading_sample_lower;
+  double distance_sample_upper;
+  double distance_sample_lower;
+  
   int index = 1;
-  for (; index < NUM_BUMPER_SAMPLES; index++) {
-    // Because of the min/max above, this is guaranteed to find an index.
-    if (reading_samples[index] >= reading) {
-      break;
-    }
+  
+  // Because of the min/max above, this is guaranteed to find a match
+  while(reading_samples[index] < reading) {
+    index++;
   }
+  
+  reading_sample_upper = reading_samples[index];
+  reading_sample_lower = reading_samples[index - 1];
+  distance_sample_upper = distance_samples[index];
+  distance_sample_lower = distance_samples[index - 1];
   
   // Calculate the percentage the reading falls between the end points of the sample segment.
   double intermediatePercentage = 
-    (reading - reading_samples[index-1])
-      / static_cast<double>(reading_samples[index] - reading_samples[index - 1]);
-  // Calculate length of the sample segment.
-  double intermediateDistance = distance_samples[index] - distance_samples[index - 1];
+    (reading - reading_sample_lower)/ static_cast<double>(reading_sample_upper - reading_sample_lower);
+    
   // Return the total distance the bumper sensor has moved.
-  return distance_samples[index - 1] + (intermediatePercentage * intermediateDistance);
+  return distance_sample_lower + (intermediatePercentage * (distance_sample_upper - distance_sample_lower));
 }
 
 /*
