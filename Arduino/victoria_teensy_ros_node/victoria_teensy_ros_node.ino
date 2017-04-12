@@ -35,7 +35,7 @@
 #include <std_msgs/String.h>
 #include <victoria_debug_msgs/TeensyDebug.h>
 #include <victoria_nav_msgs/Odom2DRaw.h>
-#include <victoria_sensor_msgs/ContactState1D.h>
+#include <victoria_sensor_msgs/DistanceDisplacement1D.h>
 #include <victoria_sensor_msgs/IMURaw.h>
 
 // Teensy pin definitions
@@ -119,8 +119,8 @@ victoria_sensor_msgs::IMURaw ros_raw_imu_msg;
 ros::Publisher ros_raw_imu_pub("imu_raw", &ros_raw_imu_msg);
 
 // Bumper publishers
-victoria_sensor_msgs::ContactState1D ros_bumper_left_msg;
-victoria_sensor_msgs::ContactState1D ros_bumper_right_msg;
+victoria_sensor_msgs::DistanceDisplacement1D ros_bumper_left_msg;
+victoria_sensor_msgs::DistanceDisplacement1D ros_bumper_right_msg;
 ros::Publisher ros_bumper_left_pub("bumper_left", &ros_bumper_left_msg);
 ros::Publisher ros_bumper_right_pub("bumper_right", &ros_bumper_right_msg);
 
@@ -455,12 +455,13 @@ static const int NUM_BUMPER_SAMPLES(7);
 
 void doPublishBumpers(void) {
   // These values come from samples taken directly from the robot.
+  // Distances are in meters.
   static const int BUMPER_BASE_LEFT(620);
   static const int BUMPER_RAW_SAMPLES_LEFT[NUM_BUMPER_SAMPLES] = { 0, 60, 144, 216, 250, 277, 287 };
-  static const double BUMPER_DISTANCE_SAMPLES_LEFT[NUM_BUMPER_SAMPLES] = { 0, 2.46, 4.05, 6.25, 8.7, 10.88, 12.01 };
+  static const double BUMPER_DISTANCE_SAMPLES_LEFT[NUM_BUMPER_SAMPLES] = { 0, 0.00246, 0.00405, 0.00625, 0.0087, 0.01088, 0.01201 };
   static const int BUMPER_BASE_RIGHT(629);
   static const int BUMPER_RAW_SAMPLES_RIGHT[NUM_BUMPER_SAMPLES] = { 0, 85, 172, 238, 265, 285 , 291 };
-  static const double BUMPER_DISTANCE_SAMPLES_RIGHT[NUM_BUMPER_SAMPLES] = { 0, 2.53, 4.06, 6.27, 8.9, 10.95, 12.06 };
+  static const double BUMPER_DISTANCE_SAMPLES_RIGHT[NUM_BUMPER_SAMPLES] = { 0, 0.00253, 0.00406, 0.00627, 0.0089, 0.01095, 0.01206 };
   
   ros::Time current_time = ros_nh.now();
 
@@ -474,12 +475,12 @@ void doPublishBumpers(void) {
   ros_bumper_left_msg.header.stamp = current_time;
   ros_bumper_left_msg.min_value = 0.0;
   ros_bumper_left_msg.max_value = BUMPER_DISTANCE_SAMPLES_LEFT[NUM_BUMPER_SAMPLES - 1];
-  ros_bumper_left_msg.value = bumper_left;
+  ros_bumper_left_msg.current_value = bumper_left;
   
   ros_bumper_right_msg.header.stamp = current_time;
   ros_bumper_right_msg.min_value = 0.0;
   ros_bumper_right_msg.max_value = BUMPER_DISTANCE_SAMPLES_RIGHT[NUM_BUMPER_SAMPLES - 1];
-  ros_bumper_right_msg.value = bumper_right;
+  ros_bumper_right_msg.current_value = bumper_right;
 
   ros_bumper_left_pub.publish(&ros_bumper_left_msg);
   ros_bumper_right_pub.publish(&ros_bumper_right_msg);
