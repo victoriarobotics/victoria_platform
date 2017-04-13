@@ -38,6 +38,7 @@
 #include <victoria_nav_msgs/Odom2DRaw.h>
 #include <victoria_sensor_msgs/DistanceDisplacement1D.h>
 #include <victoria_sensor_msgs/EncoderCount.h>
+#include <victoria_sensor_msgs/FobMode.h>
 #include <victoria_sensor_msgs/IMURaw.h>
 
 // Teensy pin definitions
@@ -124,6 +125,10 @@ bool cmd_vel_timeout_exceeded(false); // Will be set to true if time out thresho
 void cmdVelCallback(const geometry_msgs::Twist& twist_msg);
 ros::Subscriber<geometry_msgs::Twist> ros_cmd_vel_sub("cmd_vel", cmdVelCallback);
 
+// Set fob mode subscriber
+void setFobModeCallback(const victoria_sensor_msgs::FobMode& fob_mode_msg);
+ros::Subscriber<victoria_sensor_msgs::FobMode> ros_set_fob_mode_sub("set_fob_mode", setFobModeCallback);
+
 // Raw 2D Odometry publisher
 victoria_nav_msgs::Odom2DRaw ros_raw_odom_msg;
 ros::Publisher ros_raw_odom_pub("odom_2d_raw", &ros_raw_odom_msg);
@@ -171,6 +176,7 @@ void setup() {
 
   // Register ros subscribers
   ros_nh.subscribe(ros_cmd_vel_sub);
+  ros_nh.subscribe(ros_set_fob_mode_sub);
   
   // Initialize and connect to ros
   ros_nh.getHardware()->setBaud(115200);
@@ -353,6 +359,10 @@ void cmdVelCallback(const geometry_msgs::Twist& cmd_vel_msg) {
 
   // Calculate and set  refrence wheel angular velocity
   setReferenceVelocity(vl / wheel_radius, vr / wheel_radius);
+}
+
+void setFobModeCallback(const victoria_sensor_msgs::FobMode& fob_mode_msg) {
+  fob_mode = fob_mode_msg.fob_mode;
 }
 
 void doMotorController(void) {
