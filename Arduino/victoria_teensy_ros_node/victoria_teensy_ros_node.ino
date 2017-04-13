@@ -25,6 +25,7 @@
 #include <LIS3MDL.h>
 
 // Other includes
+#include <limits.h>
 #include <Timer.h>
 #include "RosParamHelper.h"
 
@@ -36,6 +37,7 @@
 #include <victoria_debug_msgs/TeensyDebug.h>
 #include <victoria_nav_msgs/Odom2DRaw.h>
 #include <victoria_sensor_msgs/DistanceDisplacement1D.h>
+#include <victoria_sensor_msgs/EncoderCount.h>
 #include <victoria_sensor_msgs/IMURaw.h>
 
 // Teensy pin definitions
@@ -136,6 +138,12 @@ victoria_sensor_msgs::DistanceDisplacement1D ros_bumper_right_msg;
 ros::Publisher ros_bumper_left_pub("bumper_left", &ros_bumper_left_msg);
 ros::Publisher ros_bumper_right_pub("bumper_right", &ros_bumper_right_msg);
 
+// Encoder publishers
+victoria_sensor_msgs::EncoderCount ros_encoder_left_msg;
+victoria_sensor_msgs::EncoderCount ros_encoder_right_msg;
+ros::Publisher ros_encoder_left_pub("encoder_left", &ros_encoder_left_msg);
+ros::Publisher ros_encoder_right_pub("encoder_right", &ros_encoder_right_msg);
+
 // Position of robot
 geometry_msgs::Pose2D pose;
 
@@ -157,6 +165,8 @@ void setup() {
   ros_nh.advertise(ros_raw_imu_pub);
   ros_nh.advertise(ros_bumper_left_pub);
   ros_nh.advertise(ros_bumper_right_pub);
+  ros_nh.advertise(ros_encoder_left_pub);
+  ros_nh.advertise(ros_encoder_right_pub);
   ros_nh.advertise(ros_teensy_debug_pub);
 
   // Register ros subscribers
@@ -184,6 +194,9 @@ void setup() {
 
   int publish_bumper_info_freq_hz = 
     ros_param_helper.getParam("publish_bumper_info_freq_hz", 10);
+
+  int publish_encoder_info_freq_hz = 
+    ros_param_helper.getParam("publish_encoder_info_freq_hz", 10);
     
   int publish_teensy_debug_info_freq_hz =
     ros_param_helper.getParam("publish_teensy_debug_info_freq_hz", 1);
@@ -244,6 +257,7 @@ void setup() {
   setupTimerCallback(publish_raw_odom_freq_hz, doPublishRawOdom);
   setupTimerCallback(publish_raw_imu_freq_hz, doPublishRawImu);
   setupTimerCallback(publish_bumper_info_freq_hz, doPublishBumpers);
+  setupTimerCallback(publish_encoder_info_freq_hz, doPublishEncoders);
   setupTimerCallback(publish_teensy_debug_info_freq_hz, doTeensyDebug);
   setupTimerCallback(BLINK_FREQ_HZ, doBlink);
 
@@ -252,6 +266,8 @@ void setup() {
   ros_raw_odom_msg.child_frame_id = "/base_link";
   ros_bumper_left_msg.header.frame_id = "/bumper_left";
   ros_bumper_right_msg.header.frame_id = "/bumper_right";
+  ros_encoder_left_msg.header.frame_id = "/encoder_left";
+  ros_encoder_right_msg.header.frame_id = "/encoder_right";
   last_cmd_vel_time = current_time;
   cmd_vel_timeout_exceeded = false;
   last_encoder_read_time = current_time;
@@ -582,6 +598,28 @@ double calculateBumperDistance(int reading, const int* reading_samples, const do
     
   // Return the total distance the bumper sensor has moved.
   return distance_sample_lower + (intermediatePercentage * (distance_sample_upper - distance_sample_lower));
+}
+
+/**
+ * Publish encoder data to ros.
+ */
+void doPublishEncoders(void) {
+  ros::Time current_time = ros_nh.now();
+  long encoder_left_count = encoder_left.read();
+  long encoder_right_count = encoder_right.read();
+
+  ros_encoder_left_msg.header.stamp = current_time;
+  ros_encoder_left_msg.count = encoder_left_count;
+  ros_encoder_left_msg.min_value = LONG_MIN;
+  ros_encoder_left_msg.max_value = LONG_MAX;
+
+  ros_encoder_right_msg.header.stamp = current_time;
+  ros_encoder_right_msg.count = encoder_right_count;
+  ros_encoder_right_msg.min_value = LONG_MIN;
+  ros_encoder_right_msg.max_value = LONG_MAX;
+
+  ros_encoder_left_pub.publish(&ros_encoder_left_msg);
+  ros_encoder_right_pub.publish(&ros_encoder_right_msg);
 }
 
 /*
