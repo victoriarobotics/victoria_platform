@@ -268,12 +268,13 @@ void setup() {
   setupTimerCallback(BLINK_FREQ_HZ, doBlink);
 
   ros::Time current_time = ros_nh.now();
-  ros_raw_odom_msg.header.frame_id = "/odom";
-  ros_raw_odom_msg.child_frame_id = "/base_link";
-  ros_bumper_left_msg.header.frame_id = "/bumper_left";
-  ros_bumper_right_msg.header.frame_id = "/bumper_right";
-  ros_encoder_left_msg.header.frame_id = "/encoder_left";
-  ros_encoder_right_msg.header.frame_id = "/encoder_right";
+  ros_raw_odom_msg.header.frame_id = "odom";
+  ros_raw_odom_msg.child_frame_id = "base_link";
+  ros_raw_imu_msg.header.frame_id = "imu_link";
+  ros_bumper_left_msg.header.frame_id = "bumper_left";
+  ros_bumper_right_msg.header.frame_id = "bumper_right";
+  ros_encoder_left_msg.header.frame_id = "encoder_left";
+  ros_encoder_right_msg.header.frame_id = "encoder_right";
   last_cmd_vel_time = current_time;
   cmd_vel_timeout_exceeded = false;
   last_encoder_read_time = current_time;
@@ -520,7 +521,6 @@ void doPublishRawImu(void) {
 
   // Publish the imu message over ROS
   ros_raw_imu_msg.header.stamp = current_time;
-  // TODO(mwomack): set header frame to what?
 
   ros_raw_imu_msg.accelerometer = convertAccelerometer(imu);
   ros_raw_imu_msg.gyro = convertGyro(imu);
