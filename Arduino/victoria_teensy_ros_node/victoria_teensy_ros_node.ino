@@ -38,6 +38,7 @@
 #include <victoria_nav_msgs/Odom2DRaw.h>
 #include <victoria_sensor_msgs/DistanceDisplacement1D.h>
 #include <victoria_sensor_msgs/EncoderCount.h>
+#include <victoria_sensor_msgs/EStop.h>
 #include <victoria_sensor_msgs/FobMode.h>
 #include <victoria_sensor_msgs/IMURaw.h>
 
@@ -149,6 +150,10 @@ victoria_sensor_msgs::EncoderCount ros_encoder_right_msg;
 ros::Publisher ros_encoder_left_pub("encoder_left", &ros_encoder_left_msg);
 ros::Publisher ros_encoder_right_pub("encoder_right", &ros_encoder_right_msg);
 
+// EStop publisher
+victoria_sensor_msgs::EStop ros_estop_msg;
+ros::Publisher ros_estop_pub("estop", &ros_estop_msg);
+
 // Position of robot
 geometry_msgs::Pose2D pose;
 
@@ -165,6 +170,18 @@ int blink_state = LOW;
 void setupTimerCallback(int callback_freq_hz, void (*callback)(void));
 
 void setup() {
+  
+  // Setup pin configurations
+  pinMode(FOB_STOP_1_PIN, INPUT);
+  pinMode(FOB_STOP_2_PIN, INPUT);
+  pinMode(FOB_STOP_3_PIN, INPUT);
+  pinMode(FOB_STOP_4_PIN, INPUT);
+  pinMode(E_STOP_PIN, INPUT);
+  pinMode(BLINK_PIN, OUTPUT);
+  
+  // Set to high to indicate teensy is alive
+  digitalWrite(BLINK_PIN, HIGH);
+  
   // Register ros publishers
   ros_nh.advertise(ros_raw_odom_pub);
   ros_nh.advertise(ros_raw_imu_pub);
@@ -172,6 +189,7 @@ void setup() {
   ros_nh.advertise(ros_bumper_right_pub);
   ros_nh.advertise(ros_encoder_left_pub);
   ros_nh.advertise(ros_encoder_right_pub);
+  ros_nh.advertise(ros_estop_pub);
   ros_nh.advertise(ros_teensy_debug_pub);
 
   // Register ros subscribers
@@ -203,6 +221,9 @@ void setup() {
 
   int publish_encoder_info_freq_hz = 
     ros_param_helper.getParam("publish_encoder_info_freq_hz", 10);
+    
+  int publish_estop_info_freq_hz = 
+    ros_param_helper.getParam("publish_estop_info_freq_hz", 10);
     
   int publish_teensy_debug_info_freq_hz =
     ros_param_helper.getParam("publish_teensy_debug_info_freq_hz", 1);
@@ -254,9 +275,6 @@ void setup() {
   // Start the TRex
   trex_err = startTRex();
 
-  // Setup pin configurations
-  pinMode(BLINK_PIN, OUTPUT);
-
   // Setup Timer callbacks
   setupTimerCallback(read_encoders_freq_hz, doReadEncoders);
   setupTimerCallback(motor_controller_freq_hz, doMotorController);
@@ -264,6 +282,7 @@ void setup() {
   setupTimerCallback(publish_raw_imu_freq_hz, doPublishRawImu);
   setupTimerCallback(publish_bumper_info_freq_hz, doPublishBumpers);
   setupTimerCallback(publish_encoder_info_freq_hz, doPublishEncoders);
+  setupTimerCallback(publish_estop_info_freq_hz, doPublishEStop);
   setupTimerCallback(publish_teensy_debug_info_freq_hz, doTeensyDebug);
   setupTimerCallback(BLINK_FREQ_HZ, doBlink);
 
@@ -630,6 +649,14 @@ void doPublishEncoders(void) {
 
   ros_encoder_left_pub.publish(&ros_encoder_left_msg);
   ros_encoder_right_pub.publish(&ros_encoder_right_msg);
+}
+
+/**
+ * Publish estop data to ros.
+ */
+void doPublishEStop(void) {
+  ros_estop_msg.stopped = external_stop;
+  ros_estop_pub.publish(&ros_estop_msg);
 }
 
 /*
