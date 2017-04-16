@@ -84,6 +84,9 @@ bool external_stop(false);
 // indicates which fob to check.
 byte fob_mode(0);
 
+// PWM threshold that will be considered "on"
+const int FOB_THRESHOLD(2000);
+
 // Victoria configuration
 double ticks_per_radian;
 double track_radius;  // in meters
@@ -345,16 +348,16 @@ bool checkFobStop(byte fob_stop_to_check) {
   
   switch(fob_stop_to_check) {
     case 1:
-      return (digitalRead(FOB_STOP_1_PIN) == LOW);
+      return (pulseIn(FOB_STOP_1_PIN, HIGH) < FOB_THRESHOLD);
       
     case 2:
-      return (digitalRead(FOB_STOP_2_PIN) == LOW);
+      return (pulseIn(FOB_STOP_2_PIN, HIGH) < FOB_THRESHOLD);
       
     case 3:
-      return (digitalRead(FOB_STOP_3_PIN) == LOW);
+      return (pulseIn(FOB_STOP_3_PIN, HIGH) < FOB_THRESHOLD);
       
     case 4:
-      return (digitalRead(FOB_STOP_4_PIN) == LOW);
+      return (pulseIn(FOB_STOP_4_PIN, HIGH) < FOB_THRESHOLD);
       
     default:
       return false;
