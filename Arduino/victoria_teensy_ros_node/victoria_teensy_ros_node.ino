@@ -84,8 +84,8 @@ bool external_stop(false);
 // indicates which fob to check.
 byte fob_mode(0);
 
-// PWM threshold that will be considered "on"
-const int FOB_THRESHOLD(2000);
+// PWM threshold that a "fob" will be considered activated.
+unsigned int fob_threshold(2000);
 
 // Victoria configuration
 double ticks_per_radian;
@@ -240,6 +240,9 @@ void setup() {
   motor_controller_acceleration =
     ros_param_helper.getParam("motor_controller_acceleration", 10);
 
+  fob_threshold = 
+    ros_param_helper.getParam("fob_threshold", 2000);
+    
   ticks_per_radian = 
     ros_param_helper.getParam("victoria_ticks_per_radian", 9072);
 
@@ -348,16 +351,16 @@ bool checkFobStop(byte fob_stop_to_check) {
   
   switch(fob_stop_to_check) {
     case 1:
-      return (pulseIn(FOB_STOP_1_PIN, HIGH) < FOB_THRESHOLD);
+      return (pulseIn(FOB_STOP_1_PIN, HIGH) < fob_threshold);
       
     case 2:
-      return (pulseIn(FOB_STOP_2_PIN, HIGH) < FOB_THRESHOLD);
+      return (pulseIn(FOB_STOP_2_PIN, HIGH) < fob_threshold);
       
     case 3:
-      return (pulseIn(FOB_STOP_3_PIN, HIGH) < FOB_THRESHOLD);
+      return (pulseIn(FOB_STOP_3_PIN, HIGH) < fob_threshold);
       
     case 4:
-      return (pulseIn(FOB_STOP_4_PIN, HIGH) < FOB_THRESHOLD);
+      return (pulseIn(FOB_STOP_4_PIN, HIGH) < fob_threshold);
       
     default:
       return false;
