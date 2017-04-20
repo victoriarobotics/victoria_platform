@@ -476,9 +476,6 @@ void doPublishRawOdom(void) {
 void doPublishRawImu(void) {
   ros::Time current_time = ros_nh.now();
 
-  // Publish the imu message over ROS
-  ros_raw_imu_msg.header.stamp = current_time;
-
   // Accelerometer data in m/s^2
   imu::Vector<3> accel = bno_imu.getVector(Adafruit_BNO055::VECTOR_ACCELEROMETER);
   
@@ -487,6 +484,9 @@ void doPublishRawImu(void) {
   
   // Magnetometer data in uT
   imu::Vector<3> mag = bno_imu.getVector(Adafruit_BNO055::VECTOR_MAGNETOMETER);
+
+  // Publish the imu message over ROS
+  ros_raw_imu_msg.header.stamp = current_time;
 
   geometry_msgs::Vector3 ros_accel;
   ros_accel.x = accel.x();
