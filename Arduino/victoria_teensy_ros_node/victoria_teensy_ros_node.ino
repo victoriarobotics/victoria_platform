@@ -21,8 +21,7 @@
 #define ENCODER_OPTIMIZE_INTERRUPTS
 #include <Encoder.h>
 #include <i2c_t3.h>
-#include <LSM6.h>
-#include <LIS3MDL.h>
+#include <Adafruit_BNO055.h>
 
 // Other includes
 #include <limits.h>
@@ -32,6 +31,7 @@
 // ROS includes
 #include <ros.h>
 #include <geometry_msgs/Pose2D.h>
+#include <geometry_msgs/Quaternion.h>
 #include <geometry_msgs/Twist.h>
 #include <std_msgs/String.h>
 #include <victoria_debug_msgs/TeensyDebug.h>
@@ -109,11 +109,9 @@ double reference_wl;
 double reference_wr;
 float motor_controller_p = 5.0;
 
-// IMU and Magnetometer
-LSM6 imu;
-LIS3MDL mag;
-bool imu_err = false;
-bool mag_err = false;
+// IMU
+Adafruit_BNO055 bno_imu = Adafruit_BNO055();
+bool imu_err(false);
 
 // ROS node handle
 ros::NodeHandle ros_nh;
@@ -264,21 +262,14 @@ void setup() {
   Wire.begin(I2C_MASTER, IGNORED, I2C_PINS_18_19, I2C_PULLUP_EXT, I2C_BUS_RATE_400KHZ);
   Wire.setDefaultTimeout(200000); // 200ms
 
-  // Setup IMU and magnetometer that use I2C
-  if (imu.init()) {
-    imu.enableDefault();
-    // TODO(mwomack): set timeout?
-  } else {
+  // Setup IMU after i2c init
+  if(!bno_imu.begin()) {
     imu_err = true;
+  } else {
+    // Use external crystal for better accuracy
+    bno_imu.setExtCrystalUse(true);
   }
   
-  if (mag.init()) {
-    mag.enableDefault();
-    // TODO(mwomack): set timeout?
-  } else {
-    mag_err = true;
-  }
-    
   // Start the TRex
   trex_err = startTRex();
 
@@ -484,74 +475,52 @@ void doPublishRawOdom(void) {
   last_raw_odom_publish_time = current_time;
 }
 
-/**
- * Converts accelerometer readings from LSM6 default settings
- * in m/s^2.
- */
-geometry_msgs::Vector3 convertAccelerometer(const LSM6& imu) {
-  // LSM6DS33 data sheet has accelerometer default
-  // full scale setting with a conversion factor of
-  // 0.061/LSB mg. Convert to g (* .001), 
-  // and 1 g = 9.81 m/s^2.
-  static const double conversionFactor(0.061 * 0.001 * 9.81);
-
-  geometry_msgs::Vector3 converted;
-  converted.x = imu.a.x * conversionFactor;
-  converted.y = imu.a.y * conversionFactor;
-  converted.z = imu.a.z * conversionFactor;
-  return converted;
-}
-
-/**
- * Converts gyro readings from LSM6 default settings
- * in rad/sec.
- */
-geometry_msgs::Vector3 convertGyro(const LSM6& imu) {
-  // LSM6DS33 data sheet has accelerometer default
-  // full scale setting with a conversion factor of
-  // 4.375/LSB mdps. Convert to dps (* .001), 
-  // and 1 dps = 0.01745329251994 rad/sec.
-  static const double conversionFactor(4.375 * 0.001 * 0.01745329251994);
-
-  geometry_msgs::Vector3 converted;
-  converted.x = imu.g.x * conversionFactor;
-  converted.y = imu.g.y * conversionFactor;
-  converted.z = imu.g.z * conversionFactor;
-  return converted;
-}
-
-/**
- * Converts magnetometer readings from LIS3MDL
- * default settings to tesla.
- */
-geometry_msgs::Vector3 convertMagnetometer(const LIS3MDL& mag) {
-  // LIS3MDL data sheet, default full scale setting has
-  // a conversion factor of LSB/6842 to get gauss value.
-  // And 1 Tesla = 0.0001 gauss.
-  static const double conversionFactor(6842 / 0.0001);
-
-  geometry_msgs::Vector3 converted;
-  converted.x = mag.m.x / conversionFactor;
-  converted.y = mag.m.y / conversionFactor;
-  converted.z = mag.m.z / conversionFactor;
-  return converted;
-}
-
 /*
  * Publish imu data to ros.
  */
 void doPublishRawImu(void) {
   ros::Time current_time = ros_nh.now();
-  imu.read();
-  mag.read();
+
+  // Accelerometer data in m/s^2
+  imu::Vector<3> accel = bno_imu.getVector(Adafruit_BNO055::VECTOR_ACCELEROMETER);
+  
+  // Gyro data in rad/sec
+  imu::Vector<3> gyro = bno_imu.getVector(Adafruit_BNO055::VECTOR_GYROSCOPE);
+  
+  // Magnetometer data in uT
+  imu::Vector<3> mag = bno_imu.getVector(Adafruit_BNO055::VECTOR_MAGNETOMETER);
+
+  // Get the quaternion
+  imu::Quaternion quat = bno_imu.getQuat();
 
   // Publish the imu message over ROS
   ros_raw_imu_msg.header.stamp = current_time;
 
-  ros_raw_imu_msg.accelerometer = convertAccelerometer(imu);
-  ros_raw_imu_msg.gyro = convertGyro(imu);
-  ros_raw_imu_msg.magnetometer = convertMagnetometer(mag);
+  geometry_msgs::Vector3 ros_accel;
+  ros_accel.x = accel.x();
+  ros_accel.y = accel.y();
+  ros_accel.z = accel.z();
+  ros_raw_imu_msg.accelerometer = ros_accel;
+  
+  geometry_msgs::Vector3 ros_gyro;
+  ros_gyro.x = gyro.x();
+  ros_gyro.y = gyro.y();
+  ros_gyro.z = gyro.z();
+  ros_raw_imu_msg.gyro = ros_gyro;
 
+  geometry_msgs::Vector3 ros_mag;
+  ros_mag.x = mag.x() / 1000000;  // Convert to Tesla
+  ros_mag.y = mag.y() / 1000000;
+  ros_mag.z = mag.z() / 1000000;
+  ros_raw_imu_msg.magnetometer = ros_mag;
+
+  geometry_msgs::Quaternion ros_quat;
+  ros_quat.x = quat.x();
+  ros_quat.y = quat.y();
+  ros_quat.z = quat.z();
+  ros_quat.w = quat.w();
+  ros_raw_imu_msg.quaternion = ros_quat;
+  
   ros_raw_imu_pub.publish(&ros_raw_imu_msg);
 }
 
@@ -765,7 +734,7 @@ void doBlink() {
 void doTeensyDebug() {
   teensy_debug_msg.trex_err = trex_err;
   teensy_debug_msg.imu_err = imu_err;
-  teensy_debug_msg.mag_err = mag_err;
+  teensy_debug_msg.mag_err = imu_err;
   teensy_debug_msg.motor_speed_left = motor_left_speed;
   teensy_debug_msg.motor_speed_right = motor_right_speed;
   teensy_debug_msg.last_cmd_vel_time = last_cmd_vel_time;
