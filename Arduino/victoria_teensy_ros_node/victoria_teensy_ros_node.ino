@@ -31,6 +31,7 @@
 // ROS includes
 #include <ros.h>
 #include <geometry_msgs/Pose2D.h>
+#include <geometry_msgs/Quaternion.h>
 #include <geometry_msgs/Twist.h>
 #include <std_msgs/String.h>
 #include <victoria_debug_msgs/TeensyDebug.h>
@@ -263,6 +264,9 @@ void setup() {
   // Setup IMU after i2c init
   if(!bno_imu.begin()) {
     imu_err = true;
+  } else {
+    // Use external crystal for better accuracy
+    bno_imu.setExtCrystalUse(true);
   }
   
   // Start the TRex
@@ -485,6 +489,9 @@ void doPublishRawImu(void) {
   // Magnetometer data in uT
   imu::Vector<3> mag = bno_imu.getVector(Adafruit_BNO055::VECTOR_MAGNETOMETER);
 
+  // Get the quaternion
+  imu::Quaternion quat = bno_imu.getQuat();
+
   // Publish the imu message over ROS
   ros_raw_imu_msg.header.stamp = current_time;
 
@@ -500,13 +507,19 @@ void doPublishRawImu(void) {
   ros_gyro.z = gyro.z();
   ros_raw_imu_msg.gyro = ros_gyro;
 
-  // TODO(mwomack): Convert from uT
   geometry_msgs::Vector3 ros_mag;
-  ros_mag.x = mag.x();
-  ros_mag.y = mag.y();
-  ros_mag.z = mag.z();
+  ros_mag.x = mag.x() / 1000000;  // Convert to Tesla
+  ros_mag.y = mag.y() / 1000000;
+  ros_mag.z = mag.z() / 1000000;
   ros_raw_imu_msg.magnetometer = ros_mag;
 
+  geometry_msgs::Quaternion ros_quat;
+  ros_quat.x = quat.x();
+  ros_quat.y = quat.y();
+  ros_quat.z = quat.z();
+  ros_quat.w = quat.w();
+  ros_raw_imu_msg.quaternion = ros_quat;
+  
   ros_raw_imu_pub.publish(&ros_raw_imu_msg);
 }
 
